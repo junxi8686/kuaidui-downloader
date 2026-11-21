@@ -13,21 +13,23 @@
 - **两种形态**：页面内浮层面板（单本 / 批量）、工具栏弹窗（关键词搜书 + 勾选下载）
 - **两套皮**：浅色「极简白」/ 深色「深色高级」，跟随系统，也可手动切换，改 `tokens.css` 一个文件全套生效
 - **不 eval**：MV3 禁止执行远端代码，所以自己写了个只认「JSON 子集 + 形参引用」的 Nuxt 数据解析器
+- **整本答案**：接一台能跑快对的安卓设备（root + frida），跑 `app/kd_bridge_server.py`，面板会多出「下载全书」，点一下就是整本 18 页（走 App 自己的签名）
 - **附赠 App 侧脚本**：Frida 抓包 + adb 截图两条路，用来导出网页端拿不到的整本答案
 
 > **先说清楚能力边界**：快对网页端对每本书只放出**前 3 页**答案原图（实测 20 本，全书 4~76 页的都只给 3 页），这是服务端就不下发，不是插件限制。整本要走 App 那一侧，见 [② App 抓包](#-app-抓包整本答案)。
 
 ---
 
-## 三种方式
+## 四种方式
 
-把「快对」上的教辅答案解析保存成本地图片 / PDF。三种做法，按需要选：
+把「快对」上的教辅答案解析保存成本地图片 / PDF。按需要选：
 
 | 方式 | 能拿到什么 | 需要什么 | 清晰度 |
 |---|---|---|---|
 | **① 浏览器插件**（`extension/`） | 每本书的前 3 页原图；能按关键词批量搜书、批量下载 | Chrome / Edge | 原图 1480×2176 |
 | **② App 抓包**（`app/`） | **整本全部页**原图 | 设备已 root（Waydroid / 真机）+ frida | 原图 |
 | **③ adb 截图**（`app/kd_shots.py`） | App 里翻到的每一页 | 只要能连 adb | 屏幕分辨率 |
+| **④ 本机桥**（`app/kd_bridge_server.py`） | **整本全部页**，直接在浏览器面板里点「下载全书」 | root + frida（真机/Waydroid） | 原图 |
 
 > 为什么要分三种：快对网页端每本书只放出前 3 页答案原图（页面数据里 `answerCount` 会写明全书多少页，但 `oriAnswers` 只给 3 条）。整本答案在 App 里，而 App 的请求带 native 签名，硬复刻接口不划算——所以方式②干脆坐在 App 里面，让它自己去请求，顺手把结果接住。
 
@@ -158,6 +160,54 @@ python3 kd_shots.py --out ~/下载/快对答案截图 --pages 40 --pdf
 
 ---
 
+## ④ 本机桥：让浏览器用上 App 的签名
+
+App 的接口是 `POST https://www.kuaiduizuoye.com/kdtools/book/downloadanswer?bookId=…&pageNo=…`，
+要 `sign`（antispam 令牌 + native 签名）。纯浏览器算不出来——所以换个思路：**让 App 自己签**。
+
+组件：
+
+```
+设备(快对App) ←frida→ kd_bridge_server.py (127.0.0.1:8710) ←fetch→ 浏览器插件
+```
+
+步骤：
+
+```bash
+# 1) 设备侧：起 frida-server，注入桥
+frida -U -f com.kuaiduizuoye.scan -l app/kd_bridge.js
+
+# 2) 本机：起本地桥（CORS 全开，只监听 127.0.0.1）
+pip install frida
+python3 app/kd_bridge_server.py --port 8710
+
+# 3) 浏览器：刷新快对书本页，面板会自动探测 /health，
+#    就绪后多出「下载全书（N 页 · 走本机 App）」，点它即可
+```
+
+也可以用命令行一步导出整本：
+
+```bash
+python3 app/kd_full.py --book <bookId> --bridge http://127.0.0.1:8710 --out ~/下载/快对答案 --pdf
+```
+
+桥的协议（`/health` `/init` `/sign` `/sign_raw` `/downloadanswer`）写在
+[app/REVERSE.md](app/REVERSE.md) §7；签名算法逆到了第 2 层，`app/kd_sign.py` / `app/kd_sign.js`
+是已复刻的部分，第 3 层（antispam 的 SECRET）要设备来做——原因见下。
+
+### 逆向到什么程度了
+
+| 层 | 内容 | 状态 |
+|---|---|---|
+| host / path / 方法 | `www.kuaiduizuoye.com` + `/kdtools/book/downloadanswer` + **POST** | ✅ 实测打通（之前 404 是 host 错 + 用了 GET） |
+| 参数串 | `Base64(排序后的 k=v 用 & 连接)` | ✅ Python / JS 逐字节一致 |
+| sign 主体 | `md5("8&%d*[" + md5(SECRET) + "]@" + paramString)` | ✅ 从 `nativeGetSign`（0x1054）反汇编得出 |
+| SECRET | `nativeInitBaseUtil → POST /pluto/app/antispam → nativeSetToken` | ❌ 只有链路，没拿到值 |
+| 离线复算 | unicorn 模拟 `libbaseutil.so` | ⚠️ 能跑完设备信息段，服务端回 `errNo 7 antispam data error` |
+
+所以现在没有「纯浏览器复刻签名」这条路：**要么用桥让 App 签，要么就没有整本**。细节和证据都在
+[app/REVERSE.md](app/REVERSE.md)。
+
 ## 目录结构
 
 ```
@@ -175,9 +225,15 @@ kuaidui-downloader/
 │     ├─ background.js       抓页面、取原图、打包、下载
 │     ├─ content.js          页面内浮动面板 + 外观切换
 │     └─ popup.html/js       弹窗：搜书 + 批量
-├─ app/                       App 侧（整本答案）
-│  ├─ kd_capture.js          frida 脚本：抄 App 的 JSON
-│  ├─ kd_export.py           日志 → 图片 / PDF
+├─ app/                       整本答案（App 侧）
+│  ├─ REVERSE.md             接口逆向报告：host/path/签名分层/证据
+│  ├─ kd_full.py             CLI：按 bookId 导出整本（--mode web / --bridge）
+│  ├─ kd_sign.py / kd_sign.js 已复刻的两层签名（含浏览器可用的 KdBridge 客户端）
+│  ├─ kd_bridge_server.py    本地桥：把 App 的签名能力暴露成 HTTP
+│  ├─ kd_bridge.js           frida 脚本：给桥提供签名与请求
+│  ├─ kd_native_emu.py       unicorn 模拟 libbaseutil.so（研究用）
+│  ├─ kd_capture.js          frida 脚本：抄 App 的 JSON（另一条路）
+│  ├─ kd_export.py           抓包日志 → 图片 / PDF
 │  ├─ run_capture.sh         一键部署 frida-server 并注入
 │  └─ kd_shots.py            adb 截图兜底
 ├─ tests/
@@ -233,6 +289,8 @@ curl -s "https://m.kuaiduizuoye.com/bookid<32位ID>" | grep -o 'oriAnswers:\[[^]
 | `run_capture.sh` 卡在找设备 | adb 没通。Waydroid 按上面三条命令开 adbd；真机看 `adb devices` 是否有 `device` |
 | frida 报 `unable to connect` | `frida-server` 没跑起来：`adb shell ps -A \| grep frida`，或手动 `adb push` + `adb shell su -c /data/local/tmp/frida-server` |
 | 抓不到 `[KD]` 行 | App 版本换了 JSON 库。先跑一遍看有没有 `[KD] 快对答案抓取已挂上`，有的话在 App 里把答案页多翻几页；仍没有就把 `kd_capture.js` 里的 hook 换到 okhttp 响应体（脚本里已带兜底，1.5 秒后自动挂） |
+| 面板没有「下载全书」按钮 | 桥没连上：`curl http://127.0.0.1:8710/health` 看返回；`ready:false` 说明 App 还没完成 antispam 握手，在 App 里随便打开一本书再回来 |
+| 桥报 `errNo 6 / 7` | 令牌过期或 App 版本变了，重启 `kd_bridge.js` 再试 |
 | ZIP 里中文名在旧解压工具里乱码 | 文件头已置 UTF-8 标志位，用 7-Zip / 系统自带解压 / macOS 归档工具打开就是正常的 |
 
 ## 边界说明

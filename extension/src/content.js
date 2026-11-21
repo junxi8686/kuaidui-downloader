@@ -12,6 +12,7 @@
     images: [],
     ids: [],
     running: false,
+    bridge: { ok: false, ready: false },
     lastUrl: location.href
   };
 
@@ -75,7 +76,10 @@
         : '';
       setStatus('已取到 ' + state.images.length + ' 页' + extra);
       render();
+      checkBridge();
     });
+
+    checkBridge();
   }
 
   /* ---------- 批量：把 id 解析成详情 ---------- */
@@ -134,6 +138,7 @@
     '  <div class="book" id="book">扫描中…</div>',
     '  <div class="meta" id="meta"></div>',
     '  <div class="row" id="actions"></div>',
+    '  <div class="row hidden" id="actions2"></div>',
     '  <div class="bar"><i id="bar"></i></div>',
     '  <div class="status" id="status">准备就绪</div>',
     '  <div class="hint" id="hint"></div>',
@@ -262,7 +267,8 @@
         meta.appendChild(s);
       });
 
-      var bZip = btn('下载 ZIP', 'primary');
+      // 桥接可用时，“下载全书”才是主操作，ZIP 让位成次按钮
+      var bZip = btn('下载 ZIP', state.bridge.ready ? '' : 'primary');
       var bPdf = btn('下载 PDF');
       var bImg = btn('逐张');
       [bZip, bPdf, bImg].forEach(function (b) { b.disabled = state.running || !state.images.length; });
@@ -271,9 +277,14 @@
       bImg.onclick = function () { runSingle('images'); };
       actions.appendChild(bZip); actions.appendChild(bPdf); actions.appendChild(bImg);
 
+      renderBridgeRow(d);
+
       if (d.answerCount && d.answerCount > state.images.length) {
-        hint.textContent = '网页端每本书只放出前 ' + state.images.length + ' 页（这本书官方共 ' + d.answerCount +
-          ' 页），这是快对自己的限制。要整本只能在快对 App 里看。';
+        hint.textContent = state.bridge.ready
+          ? '网页端每本书只放出前 ' + state.images.length + ' 页（官方共 ' + d.answerCount +
+            ' 页）。本机 App 已连上，点上面的按钮拿整本。'
+          : '网页端每本书只放出前 ' + state.images.length + ' 页（这本书官方共 ' + d.answerCount +
+            ' 页），这是快对自己的限制。要整本只能在快对 App 里看。';
       }
     } else if (state.ids.length) {
       $('book').textContent = '本页检测到 ' + state.ids.length + ' 本书';
@@ -299,6 +310,73 @@
   }
 
   /* ---------- 执行 ---------- */
+
+  /* ---------- 桥接：整本 ---------- */
+
+  function checkBridge() {
+    send({ type: 'KD_BRIDGE_HEALTH' }).then(function (res) {
+      var health = res && res.health;
+      var next = {
+        ok: !!(health && health.ok),
+        ready: !!(health && health.ready)
+      };
+      var changed = next.ready !== state.bridge.ready;
+      state.bridge = next;
+      if (changed && state.detail) render();
+    });
+  }
+
+  function renderBridgeRow(d) {
+    var row = $('actions2');
+    row.innerHTML = '';
+    var need = (d.answerCount || 0) > state.images.length;
+    if (!state.bridge.ready || !need) { row.classList.add('hidden'); return; }
+    var b = btn('下载全书（' + d.answerCount + ' 页 · 走本机 App）', 'primary');
+    b.disabled = state.running;
+    b.onclick = runFull;
+    row.appendChild(b);
+    row.classList.remove('hidden');
+  }
+
+  async function runFull() {
+    if (state.running || !state.detail) return;
+    state.running = true;
+    render();
+    setPct(5);
+    setStatus('通过本机 App 拿整本…');
+
+    var res = await send({
+      type: 'KD_BRIDGE_FETCH',
+      jobId: 'full-' + Date.now(),
+      bookId: state.detail.bookId,
+      maxPages: state.detail.answerCount || 200
+    });
+    if (!res || !res.ok || !res.images || !res.images.length) {
+      state.running = false;
+      render();
+      setPct(0);
+      setStatus('桥没给到整本：' + ((res && res.error) || '检查 kd_bridge_server.py 是否在跑'), true);
+      return;
+    }
+
+    state.images = res.images;
+    state.detail.images = res.images;
+    setStatus('拿到 ' + res.images.length + ' 页，开始下载…');
+    var options = await getOptions();
+    var run = await send({
+      type: 'KD_RUN',
+      jobId: 'full-dl-' + Date.now(),
+      mode: 'single',
+      format: 'zip',
+      detail: state.detail,
+      images: res.images,
+      options: options
+    });
+    state.running = false;
+    render();
+    if (!run || !run.ok) { setPct(0); setStatus('失败：' + ((run && run.error) || '后台无响应'), true); }
+    else { setPct(100); setStatus('整本已保存：' + run.filename); }
+  }
 
   async function runSingle(format) {
     if (state.running) return;

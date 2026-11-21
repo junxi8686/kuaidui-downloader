@@ -75,6 +75,71 @@ function sizeVariant(url, width) {
 
 function pad(n, len) { var s = String(n); while (s.length < len) s = '0' + s; return s; }
 
+/* ---------------- 本地桥（App 签名代理） ----------------
+ * 快对整本答案要 App 的 antispam 令牌 + native 签名，纯浏览器算不出来。
+ * 有一台能跑快对的安卓设备（root + frida）时，跑 app/kd_bridge_server.py，
+ * 这里就通过它让「App 自己」签一次名，把整本图片直链拿回来。
+ * 协议见 app/REVERSE.md §7。
+ */
+
+var BRIDGE_DEFAULT = 'http://127.0.0.1:8710';
+
+function bridgeBase() {
+  return new Promise(function (resolve) {
+    chrome.storage.local.get({ bridgeUrl: BRIDGE_DEFAULT }, function (v) {
+      resolve((v.bridgeUrl || BRIDGE_DEFAULT).replace(/\/+$/, ''));
+    });
+  });
+}
+
+async function bridgeFetch(path, body, timeoutMs) {
+  var base = await bridgeBase();
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs || 4000) : null;
+  try {
+    var res = await fetch(base + path, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller ? controller.signal : undefined
+    });
+    if (!res.ok) throw new Error('桥返回 HTTP ' + res.status);
+    return await res.json();
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function bridgeHealth() {
+  try {
+    var j = await bridgeFetch('/health', null, 2500);
+    return { ok: !!j.ok, ready: !!j.ready, cuid: j.cuid || '', base: await bridgeBase() };
+  } catch (e) {
+    return { ok: false, ready: false, error: String(e && e.message || e) };
+  }
+}
+
+// 逐页向桥要直链，直到拿不到为止
+async function bridgePull(jobId, bookId, maxPages) {
+  var images = [];
+  var limit = Math.max(1, Math.min(maxPages || 200, 200));
+  for (var p = 0; p < limit; p++) {
+    if (cancelled) break;
+    progress(jobId, '桥接取第 ' + (p + 1) + ' 页…', Math.round((p + 1) / limit * 80));
+    var j;
+    try {
+      j = await bridgeFetch('/downloadanswer', { bookId: bookId, pageNo: p });
+    } catch (e) {
+      if (!images.length) throw e;
+      break;
+    }
+    if (!j || !j.ok || !j.imageUrl) break;
+    if (images.indexOf(j.imageUrl) < 0) images.push(j.imageUrl);
+    await sleep(120);
+  }
+  return images;
+}
+
 /* ---------------- 抓书 ---------------- */
 
 async function fetchBook(bookId) {
@@ -266,6 +331,17 @@ async function handle(msg) {
 
     case 'KD_FETCH_BOOK':
       return { ok: true, detail: await fetchBook(msg.bookId) };
+
+    case 'KD_BRIDGE_HEALTH':
+      return { ok: true, health: await bridgeHealth() };
+
+    case 'KD_BRIDGE_FETCH': {
+      cancelled = false;
+      var jobId2 = msg.jobId || String(Date.now());
+      var imgs = await bridgePull(jobId2, msg.bookId, msg.maxPages);
+      progress(jobId2, imgs.length ? ('桥接取到 ' + imgs.length + ' 页') : '桥没返回图片', 85);
+      return { ok: imgs.length > 0, images: imgs, error: imgs.length ? null : '桥没返回图片（在 App 里打开过这本书吗？）' };
+    }
 
     case 'KD_SEARCH':
       return { ok: true, result: await fetchSearch(msg.keyword, msg.page || 1) };

@@ -90,7 +90,21 @@ async function call(msg) {
 (async () => {
   const t0 = Date.now();
   try {
-    if (mode === 'search') {
+    if (mode === 'bridge') {
+      const h = await call({ type: 'KD_BRIDGE_HEALTH' });
+      console.log('桥 /health:', JSON.stringify(h));
+      const f = await call({ type: 'KD_BRIDGE_FETCH', jobId: 'b', bookId, maxPages: 5 });
+      console.log('桥取页:', f.ok, (f.images || []).length, '页');
+      if (!f.ok) throw new Error(f.error);
+      const r = await call({ type: 'KD_FETCH_BOOK', bookId });
+      const detail = r.detail;
+      detail.images = f.images;
+      const res = await call({
+        type: 'KD_RUN', jobId: 'b2', mode: 'single', format: process.env.FMT || 'zip',
+        detail, images: f.images, options: { width: 'origin' }
+      });
+      console.log('结果:', JSON.stringify(res));
+    } else if (mode === 'search') {
       const res = await call({ type: 'KD_SEARCH', keyword: '练习与测试', page: 1 });
       console.log('搜索结果:', res.result.books.length, '本 / total', res.result.total);
       console.log(JSON.stringify(res.result.books.slice(0, 3), null, 2));

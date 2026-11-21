@@ -105,6 +105,9 @@
             ],
             sourceUrl: location.href
           } });
+        } else if (msg.type === 'KD_BRIDGE_HEALTH') {
+          // 预览用：假装本机桥已就绪，让“下载全书”按钮显出来
+          cb({ ok: true, health: { ok: true, ready: true, cuid: 'PREVIEW' } });
         } else if (msg.type === 'KD_RUN') {
           cb({ ok: false, error: '这是本地预览页，下载请到真的快对页面里点' });
         } else {
