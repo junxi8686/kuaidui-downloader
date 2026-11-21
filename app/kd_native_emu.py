@@ -543,9 +543,17 @@ class KDSo:
         return r0
 
     def init_baseutil(self, cuid, ctx_obj=None):
+        """nativeInitBaseUtil 是 **static** native：
+        (JNIEnv*, jclass, Context, String) → r0=env, r1=jclass, r2=ctx, r3=cuid。
+
+        之前按实例方法只传了三个参数，cuid 落到 Context 槽、r3 是未初始化值，
+        于是 signA 里第 4 段恒为空、且完全不随 cuid 变化（这也解释了服务端
+        为什么一直判 data error）。
+        """
         ctx = ctx_obj if ctx_obj is not None else self.newhandle('obj', 'android.content.Context')
         jcuid = self.newhandle('str', cuid)
-        r = self._call(BASE + 0xd14, [self.env_ptr, ctx, jcuid], ret_is_str=True)
+        jclass = self.newhandle('class', 'com/zuoyebang/baseutil/NativeHelper')
+        r = self._call(BASE + 0xd14, [self.env_ptr, jclass, ctx, jcuid], ret_is_str=True)
         return r
 
     def set_token(self, cuid, signA, signB, ctx_obj=None):

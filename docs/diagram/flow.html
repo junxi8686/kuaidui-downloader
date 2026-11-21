@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="dsh-design" content="diagram 1600x1000">
+<title>卡点图 · 快对整本答案链路</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .dg-page { --dg-scale: 1; }
+  .tr-box.ok { border-color: var(--color-success); }
+  .tr-box.ok small { color: var(--color-success); }
+  .tr-box.bad { border-color: var(--color-danger); background: color-mix(in oklab, var(--color-danger) 6%, var(--color-surface)); }
+  .tr-box.bad small { color: var(--color-danger); }
+  .tr-box.go { border-color: var(--color-primary); }
+  .mark { font-weight: 700; margin-right: 4px; }
+  .ok .mark { color: var(--color-success); }
+  .bad .mark { color: var(--color-danger); }
+  .dg-legend li.s-ok::before { background: var(--color-success); }
+  .dg-legend li.s-bad::before { background: var(--color-danger); }
+  .dg-legend li.s-go::before { background: var(--color-primary); }
+</style>
+</head>
+<body class="dg-page">
+<main class="dg-canvas">
+  <header class="dg-head">
+    <span class="dg-kicker">整本答案 · 链路复盘</span>
+    <h1>卡在哪一步</h1>
+    <p>明文结构全拆开了，只卡在一个函数：它把明文加密成令牌的那一步。</p>
+  </header>
+
+  <div class="dg tr">
+    <section class="tr-stage">
+      <h3 class="tr-label">① 网页端<small>已通</small></h3>
+      <div class="tr-body">
+        <div class="tr-row">
+          <div class="tr-box ok"><span class="mark">✓</span>书本页<small>服务端渲染</small></div>
+          <div class="tr-box ok"><span class="mark">✓</span>oriAnswers<small>每本 3 页原图</small></div>
+          <div class="tr-box ok"><span class="mark">✓</span>插件打包<small>ZIP / PDF / 逐张</small></div>
+        </div>
+      </div>
+      <div class="tr-out"><b>现在就能用</b>任意书本页</div>
+    </section>
+
+    <section class="tr-stage">
+      <h3 class="tr-label">② 签名<small>已复刻</small></h3>
+      <div class="tr-body">
+        <div class="tr-row">
+          <div class="tr-box ok"><span class="mark">✓</span>参数串<small>Base64（排序后拼接）</small></div>
+          <div class="tr-box ok"><span class="mark">✓</span>md5 拼串<small>只用 md5(SECRET)</small></div>
+          <div class="tr-box ok"><span class="mark">✓</span>sign<small>JS / Python 一致</small></div>
+        </div>
+      </div>
+      <div class="tr-out"><b>公式通了</b>缺一个输入</div>
+    </section>
+
+    <section class="tr-stage">
+      <h3 class="tr-label">③ 设备令牌<small>卡点</small></h3>
+      <div class="tr-body">
+        <div class="tr-row">
+          <div class="tr-box ok"><span class="mark">✓</span>signA 四段明文<small>常量 · 随机码 · 证书 md5 · cuid</small></div>
+          <div class="tr-box bad"><span class="mark">✗</span>变体 DES 加密<small>改了算法，不是标准 DES</small></div>
+          <div class="tr-box bad"><span class="mark">✗</span>服务端只回一句<small>errNo 7，没有可迭代的信息</small></div>
+        </div>
+      </div>
+      <div class="tr-out"><b>墙</b>纯离线造不出来</div>
+    </section>
+
+    <section class="tr-stage">
+      <h3 class="tr-label">④ 两条出路<small>绕过去</small></h3>
+      <div class="tr-body">
+        <div class="tr-row">
+          <div class="tr-box go"><span class="mark">▸</span>一次 hook 拿 32 位 secret_md5<small>之后纯浏览器签名</small></div>
+          <div class="tr-box soft">常驻桥<small>设备开着时实时签</small></div>
+        </div>
+      </div>
+      <div class="tr-out"><b>目标</b>只装一个插件</div>
+    </section>
+  </div>
+
+  <footer class="dg-foot">
+    <ul class="dg-legend">
+      <li class="s-ok">已打通</li>
+      <li class="s-bad">卡在这里</li>
+      <li class="s-go">推荐出路</li>
+    </ul>
+    <p class="dg-note">证据：app/REVERSE.md（真实请求 / 反汇编 / errNo 矩阵）</p>
+  </footer>
+</main>
+</body>
+</html>

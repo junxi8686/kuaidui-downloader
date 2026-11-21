@@ -143,6 +143,69 @@ def build_query(pairs, sign=None, tips=True) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# signA（= nativeInitBaseUtil 的输出）的结构 —— 第二轮逆出来的
+# --------------------------------------------------------------------------- #
+# 明文是 4 段用 "##" 拼起来（.rodata 0x686d 的 "%s##%s##%s##%s"，在
+# nativeInitBaseUtil 0xd64 处调用）：
+#   1) "8&%d*"                常量
+#   2) 10 位随机码            time(0)+clock() 种 srand48，循环 10 次 lrand48()%62
+#                             查 .rodata 0x6eaa 的 A-Za-z0-9 表（0x3c6c）
+#   3) md5(签名证书 DER 的 hex)   ← 已用真证书验证：md5(cert.der.hex()) 完全对上
+#   4) cuid                  设备号原样
+# 然后 DES(明文) → 再按「每 nibble 反转 4 位、低半字节在前」编码成 hex。
+SIGA_PREFIX = "8&%d*"
+SIGA_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def signa_plaintext(cuid, cert_der=None, cert_hex=None, nonce=None) -> str:
+    """拼出 signA 的明文（DES 之前）。
+
+    cert_der / cert_hex 二选一：APK 里的签名证书（META-INF/*.RSA 解出来的 X.509 DER）。
+    nonce 不给就随机生成 10 位（真机就是这么做的）。
+    """
+    import random
+    if cert_hex is None:
+        if cert_der is None:
+            raise ValueError("要给 cert_der 或 cert_hex")
+        cert_hex = cert_der.hex()
+    if nonce is None:
+        nonce = "".join(random.choice(SIGA_ALPHABET) for _ in range(10))
+    return f"{SIGA_PREFIX}##{nonce}##{md5hex(cert_hex)}##{cuid}"
+
+
+def _rev4(n: int) -> int:
+    """反转低 4 位：0b1011 -> 0b1101"""
+    r = 0
+    for i in range(4):
+        if n >> i & 1:
+            r |= 1 << (3 - i)
+    return r
+
+
+def signa_encode(blob: bytes) -> str:
+    """signA 的最终编码：每个字节拆两个 nibble，各自反转 4 位、低半字节在前。
+
+    已验证：仿真器里 56 字节密文 → 224 字符，和这里的输出逐字符相同。
+    """
+    out = []
+    for b in blob:
+        out.append("%02x%02x" % (_rev4(b & 0xF), _rev4((b >> 4) & 0xF)))
+    return "".join(out)
+
+
+def signa_decode(text: str) -> bytes:
+    """signa_encode 的逆运算（拿到别人的 signA 想还原密文时用）。"""
+    if len(text) % 4:
+        raise ValueError("signA 长度应该是 4 的倍数")
+    out = bytearray()
+    for i in range(0, len(text), 4):
+        lo = _rev4(int(text[i:i + 2], 16))
+        hi = _rev4(int(text[i + 2:i + 4], 16))
+        out.append(lo | (hi << 4))
+    return bytes(out)
+
+
+# --------------------------------------------------------------------------- #
 # SignCore 实现
 # --------------------------------------------------------------------------- #
 class BridgeCore:
