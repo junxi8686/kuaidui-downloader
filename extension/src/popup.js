@@ -140,31 +140,89 @@
     setStatus(msg.text);
   });
 
-  /* ---------- 本地密钥 ---------- */
+  /* ---------- 密钥来源 ---------- */
 
-  function loadKeys() {
-    chrome.storage.local.get({ secretMd5: '', cuid: '' }, function (v) {
-      $('secret').value = v.secretMd5 || '';
-      $('cuid').value = v.cuid || '';
-      updateKeyState(v.secretMd5, v.cuid);
+  var keyMode = 'unset';
+
+  function readStorage(keys) {
+    return new Promise(function (r) { chrome.storage.local.get(keys, r); });
+  }
+
+  function setModeUI(mode) {
+    keyMode = mode;
+    Array.prototype.forEach.call(document.querySelectorAll('.mode-btn'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+    });
+    $('sharedBlock').classList.toggle('hidden', mode !== 'shared');
+    $('ownBlock').classList.toggle('hidden', mode !== 'own');
+    $('resetRow').classList.toggle('hidden', mode === 'unset');
+    if (mode === 'unset') $('keyState').textContent = '先选一种';
+  }
+
+  function refreshStatus(force) {
+    send({ type: 'KD_SIGN_STATUS', force: !!force }).then(function (r) {
+      var st = r || {};
+      if (st.mode && keyMode === 'unset') setModeUI(st.mode);
+      if (st.configured) {
+        $('keyState').textContent = st.mode === 'shared'
+          ? '共享密钥已就绪' + (st.from === 'cache' ? '（缓存）' : '')
+          : '自己的密钥已就绪';
+      } else {
+        $('keyState').textContent = st.mode === 'shared' ? '共享密钥暂不可用'
+          : st.mode === 'own' ? '自己的密钥未填'
+          : '未选择';
+        if (st.mode === 'shared' && st.error) $('sharedHint').textContent = '共享密钥：' + st.error;
+      }
     });
   }
 
-  function updateKeyState(secret, cuid) {
+  function chooseMode(mode) {
+    chrome.storage.local.set({ keyMode: mode }, function () {
+      setModeUI(mode);
+      refreshStatus(mode === 'shared');
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.mode-btn'), function (b) {
+    b.onclick = function () { chooseMode(b.getAttribute('data-mode')); };
+  });
+
+  $('resetMode').onclick = function () {
+    chrome.storage.local.set({ keyMode: 'unset' }, function () {
+      setModeUI('unset');
+      $('keyState').textContent = '未选择';
+    });
+  };
+
+  $('refreshShared').onclick = function () {
+    $('sharedHint').textContent = '共享密钥：拉取中…';
+    refreshStatus(true);
+  };
+
+  function loadOwnKeys() {
+    chrome.storage.local.get({ secretMd5: '', cuid: '' }, function (v) {
+      $('secret').value = v.secretMd5 || '';
+      $('cuid').value = v.cuid || '';
+      updateOwnState(v.secretMd5, v.cuid);
+    });
+  }
+
+  function updateOwnState(secret, cuid) {
     var ok = /^[0-9a-fA-F]{32}$/.test((secret || '').trim()) && (cuid || '').trim();
-    $('keyState').textContent = ok ? '已配置，可用整本下载' : '未配置（整本下载不可用）';
+    $('ownState').textContent = ok ? '已填好' : '未填';
   }
 
   $('saveKey').onclick = function () {
     var secret = $('secret').value.trim().toLowerCase();
     var cuid = $('cuid').value.trim();
     if (secret && !/^[0-9a-f]{32}$/.test(secret)) {
-      $('keyState').textContent = 'secret_md5 必须是 32 位十六进制';
+      $('ownState').textContent = 'secret_md5 必须是 32 位十六进制';
       return;
     }
     chrome.storage.local.set({ secretMd5: secret, cuid: cuid }, function () {
-      updateKeyState(secret, cuid);
-      setStatus(secret && cuid ? '密钥已保存' : '密钥已清空');
+      updateOwnState(secret, cuid);
+      setStatus(secret && cuid ? '自己的密钥已保存' : '已清空');
+      refreshStatus(false);
     });
   };
 
@@ -173,8 +231,11 @@
   if (chrome.runtime && chrome.runtime.getManifest) {
     $('ver').textContent = 'v' + chrome.runtime.getManifest().version;
   }
-  loadKeys();
-  chrome.storage.local.get({ imageWidth: 'origin', kd_theme: 'auto' }, function (v) {
+  loadOwnKeys();
+  chrome.storage.local.get({ keyMode: 'unset', imageWidth: 'origin', kd_theme: 'auto' }, function (v) {
+    setModeUI(v.keyMode || 'unset');
+    refreshStatus(false);
+
     $('width').value = v.imageWidth;
     // 面板里点过「外观」的话，弹窗跟着走；auto 就交给系统媒体查询
     if (v.kd_theme === 'light' || v.kd_theme === 'dark') {

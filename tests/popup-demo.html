@@ -28,6 +28,43 @@
   </select>
 </div>
 
+<section class="keys" id="keys">
+  <div class="keys-head">
+    <span>整本答案 · 密钥</span>
+    <span class="key-state" id="keyState">未选择</span>
+  </div>
+
+  <div class="mode" id="modePicker">
+    <button class="mode-btn" data-mode="shared">用共享密钥<small>推荐 · 装完即用</small></button>
+    <button class="mode-btn" data-mode="own">用我自己的<small>自己取一次</small></button>
+  </div>
+
+  <div class="key-block hidden" id="sharedBlock">
+    <div class="keyhint" id="sharedHint">共享密钥：从远程拉取，失效会自动更新。</div>
+    <div class="keyrow">
+      <button class="ghost" id="refreshShared">重新拉取</button>
+    </div>
+  </div>
+
+  <div class="key-block hidden" id="ownBlock">
+    <div class="keyrow">
+      <input type="text" id="secret" placeholder="secret_md5（32 位 hex）" spellcheck="false">
+      <input type="text" id="cuid" placeholder="cuid" spellcheck="false">
+    </div>
+    <div class="keyrow">
+      <button class="ghost" id="saveKey">保存</button>
+      <span class="keyhint" id="ownState">未填</span>
+    </div>
+    <div class="keyhint">
+      取法见 README「④ 整本答案」：任一台能跑快对的设备 hook 一次，`kd_secret.py` 会打出这两个值。
+    </div>
+  </div>
+
+  <div class="keyrow hidden" id="resetRow">
+    <button class="ghost" id="resetMode">换一种方式</button>
+  </div>
+</section>
+
 <div class="toolbar">
   <label class="chk"><input type="checkbox" id="all"> 全选</label>
   <span id="count">0 本已选</span>
@@ -46,39 +83,40 @@
 
 
 <script>
-/* 仅用于本地预览：假的 chrome.* */
 (function(){
   var BOOKS = [
     {bookId:'cee9bcf902dcb3ba990f58d7b7d82efe',title:'2026年湘教考苑中考总复习初中语文全册课标版',subject:'语文',grade:'初中',year:'2026年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_450075da1ffa0a43ec15f33db99a516b.jpg?imageView2/2/w/170'},
-    {bookId:'be7cd5907b53984fc83f47e9ba3097d6',title:'2026年湘教考苑中考总复习初中化学全册课标版',subject:'化学',grade:'初中',year:'2026年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_f66bc342cf62d2469f9afc117aac074e.jpg?imageView2/2/w/170'},
-    {bookId:'938438f14ee22cafa656a284acfdb234',title:'2025年湘教考苑中考总复习初中语文全册课标版',subject:'语文',grade:'初中',year:'2025年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_014f75892c9e04ca1bac1db3ed111a12.jpg?imageView2/2/w/170'},
-    {bookId:'5359ed3900a591fa95da5e7f5af4f78e',title:'2024年湘教考苑中考总复习初中语文全册通用版',subject:'语文',grade:'初中',year:'2024年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_338e8e9d887cd1f29990f4671b98d135.jpg?imageView2/2/w/170'}
+    {bookId:'be7cd5907b53984fc83f47e9ba3097d6',title:'2026年湘教考苑中考总复习初中化学全册课标版',subject:'化学',grade:'初中',year:'2026年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_f66bc342cf62d2469f9afc117aac074e.jpg?imageView2/2/w/170'}
   ];
+  var store = { keyMode: 'unset' };
   window.chrome = {
     runtime: {
       lastError: null,
-      getManifest: function(){ return {version:'1.0.0'}; },
+      getManifest: function(){ return {version:'1.4.0'}; },
       onMessage: { addListener: function(){} },
       sendMessage: function(msg, cb){
         if (!cb) return;
         if (msg.type === 'KD_SEARCH') return cb({ok:true, result:{books:BOOKS, total:BOOKS.length, hasMore:false}});
+        if (msg.type === 'KD_SIGN_STATUS') return cb({ok:true, configured:false, mode: store.keyMode, sharedAvailable:false});
         if (msg.type === 'KD_FETCH_BOOK') return cb({ok:false});
         cb({ok:true});
       }
     },
-    storage: { local: { get: function(d,cb){ cb(Object.assign({imageWidth:'origin', kd_theme:'auto'}, d)); }, set: function(v,cb){cb&&cb();} } },
+    storage: { local: {
+      get: function(d,b){ var o={}; for (var k in d) o[k]= (k in store)?store[k]:d[k]; cb_wrap(b,o); },
+      set: function(v,b){ for (var k in v) store[k]=v[k]; b&&b(); }
+    } },
     tabs: { create: function(){} }
   };
-
+  function cb_wrap(b,o){ b(o); }
+  document.addEventListener('DOMContentLoaded', function(){
+    document.getElementById('kw').value = '练习与测试';
+    setTimeout(function(){ document.getElementById('go').click(); }, 20);
+  });
 })();
 </script>
 
 <script src="../extension/src/lib.js"></script>
 <script src="../extension/src/popup.js"></script>
-<script>
-/* 预览用：直接触发一次搜索，保证截图时列表已渲染 */
-document.getElementById('kw').value = '练习与测试';
-document.getElementById('go').click();
-</script>
 </body>
 </html>

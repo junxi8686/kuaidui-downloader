@@ -28,21 +28,42 @@
   </select>
 </div>
 
-<details class="keys" id="keys">
-  <summary>整本答案 · 本地密钥</summary>
-  <div class="keyrow">
-    <input type="text" id="secret" placeholder="secret_md5（32 位 hex）" spellcheck="false">
-    <input type="text" id="cuid" placeholder="cuid" spellcheck="false">
+<section class="keys" id="keys">
+  <div class="keys-head">
+    <span>整本答案 · 密钥</span>
+    <span class="key-state" id="keyState">未选择</span>
   </div>
-  <div class="keyrow">
-    <button class="ghost" id="saveKey">保存</button>
-    <span class="keyhint" id="keyState">未配置</span>
+
+  <div class="mode" id="modePicker">
+    <button class="mode-btn" data-mode="shared">用共享密钥<small>推荐 · 装完即用</small></button>
+    <button class="mode-btn" data-mode="own">用我自己的<small>自己取一次</small></button>
   </div>
-  <div class="keyhint">
-    这两个值只需取一次（见 README「④ 本机桥」里的 <code>/secret</code>）。配置后书本页会出现「下载全书」，
-    之后完全不用再连设备。
+
+  <div class="key-block hidden" id="sharedBlock">
+    <div class="keyhint" id="sharedHint">共享密钥：从远程拉取，失效会自动更新。</div>
+    <div class="keyrow">
+      <button class="ghost" id="refreshShared">重新拉取</button>
+    </div>
   </div>
-</details>
+
+  <div class="key-block hidden" id="ownBlock">
+    <div class="keyrow">
+      <input type="text" id="secret" placeholder="secret_md5（32 位 hex）" spellcheck="false">
+      <input type="text" id="cuid" placeholder="cuid" spellcheck="false">
+    </div>
+    <div class="keyrow">
+      <button class="ghost" id="saveKey">保存</button>
+      <span class="keyhint" id="ownState">未填</span>
+    </div>
+    <div class="keyhint">
+      取法见 README「④ 整本答案」：任一台能跑快对的设备 hook 一次，`kd_secret.py` 会打出这两个值。
+    </div>
+  </div>
+
+  <div class="keyrow hidden" id="resetRow">
+    <button class="ghost" id="resetMode">换一种方式</button>
+  </div>
+</section>
 
 <div class="toolbar">
   <label class="chk"><input type="checkbox" id="all"> 全选</label>

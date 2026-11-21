@@ -80,15 +80,67 @@ function pad(n, len) { var s = String(n); while (s.length < len) s = '0' + s; re
  * 之后完全离线：浏览器自己签，不需要 App、不需要桥。
  */
 
-async function getLocalSign() {
-  return new Promise(function (resolve) {
-    chrome.storage.local.get({ secretMd5: '', cuid: '' }, function (v) {
-      resolve({
-        secretMd5: (v.secretMd5 || '').trim().toLowerCase(),
-        cuid: (v.cuid || '').trim()
-      });
-    });
-  });
+var SHARED_TOKEN_URL = '';   // 共享密钥地址（secret gist 的 raw 链接），配好后填这里
+var SHARED_TTL = 12 * 3600 * 1000;
+
+function storage(keys) {
+  return new Promise(function (resolve) { chrome.storage.local.get(keys, resolve); });
+}
+
+function saveStorage(obj) {
+  return new Promise(function (resolve) { chrome.storage.local.set(obj, resolve); });
+}
+
+// 「自己的密钥」：用户自己填的那份
+async function getOwnSign() {
+  var v = await storage({ secretMd5: '', cuid: '' });
+  return {
+    secretMd5: (v.secretMd5 || '').trim().toLowerCase(),
+    cuid: (v.cuid || '').trim()
+  };
+}
+
+// 「共享密钥」：远程拉一份，缓存 12 小时；拉不到就用缓存（哪怕过期）
+async function getSharedSign(force) {
+  var v = await storage({ sharedToken: null, sharedFetchedAt: 0, sharedUrl: '' });
+  var url = (v.sharedUrl || SHARED_TOKEN_URL || '').trim();
+  var cached = v.sharedToken;
+  var fresh = cached && (Date.now() - (v.sharedFetchedAt || 0) < SHARED_TTL);
+
+  if (!url) return { ok: false, error: '共享密钥地址还没配置', cached: cached || null };
+  if (cached && fresh && !force) return { ok: true, token: cached, from: 'cache' };
+
+  try {
+    var res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var j = await res.json();
+    var token = {
+      secretMd5: String(j.secret_md5 || j.secretMd5 || '').trim().toLowerCase(),
+      cuid: String(j.cuid || '').trim()
+    };
+    if (!/^[0-9a-f]{32}$/.test(token.secretMd5) || !token.cuid) throw new Error('共享密钥格式不对');
+    await saveStorage({ sharedToken: token, sharedFetchedAt: Date.now() });
+    return { ok: true, token: token, from: 'remote' };
+  } catch (e) {
+    if (cached) return { ok: true, token: cached, from: 'cache-stale' };
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+// 按用户选的来源解析出真正要用的密钥
+async function resolveSign(force) {
+  var v = await storage({ keyMode: 'unset' });
+  if (v.keyMode === 'own') {
+    var own = await getOwnSign();
+    return signConfigured(own)
+      ? { ok: true, token: own, mode: 'own' }
+      : { ok: false, mode: 'own', error: '还没填自己的密钥' };
+  }
+  if (v.keyMode === 'shared') {
+    var sh = await getSharedSign(force);
+    return { ok: !!sh.ok, mode: 'shared', token: sh.token || null, from: sh.from, error: sh.error };
+  }
+  return { ok: false, mode: 'unset', error: '还没选密钥来源' };
 }
 
 function signConfigured(cfg) {
@@ -96,8 +148,9 @@ function signConfigured(cfg) {
 }
 
 async function localFetchPages(jobId, bookId, pages) {
-  var cfg = await getLocalSign();
-  if (!signConfigured(cfg)) throw new Error('还没配置离线密钥');
+  var resolved = await resolveSign();
+  if (!resolved.ok) throw new Error(resolved.error || '密钥不可用');
+  var cfg = resolved.token;
 
   var images = [];
   var limit = Math.max(1, Math.min(pages || 200, 200));
@@ -400,8 +453,15 @@ async function handle(msg) {
       return { ok: true, detail: await fetchBook(msg.bookId) };
 
     case 'KD_SIGN_STATUS': {
-      var cfg = await getLocalSign();
-      return { ok: true, configured: signConfigured(cfg) };
+      var r = await resolveSign(msg.force);
+      return {
+        ok: true,
+        configured: !!r.ok,
+        mode: r.mode,
+        from: r.from || '',
+        error: r.error || '',
+        sharedAvailable: !!SHARED_TOKEN_URL
+      };
     }
 
     case 'KD_LOCAL_FETCH': {
