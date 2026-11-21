@@ -800,3 +800,23 @@ mitmproxy 系统证书 + 全局代理，全链路抓包。
 另外：扫了 App 的 4 个主要堆区（73MB + 58MB + 19MB + 12MB，共约 150MB）的**全部可打印字符串
 （含 UTF-16LE）**，逐个当 RC4 密钥试解，也没命中 —— 说明这个 key 在内存里不是以明文 ASCII 存在，
 或者当前进程还没走到取 key 的那一步。
+
+## 9.5 绕开 RC4 的落地路径：翻页收割（已交付并测通）
+
+既然 imageUrl 的 RC4 密钥（`nativeGetKey`）逆不出来，就**让 App 自己解密**：
+App 把密文解成明文后一定会去 `https://kd-book.cdnjtzy.com/scanimg/scan_*.jpg` 取图，
+那个 GET 请求里的地址就是明文。
+
+工具：
+
+```bash
+python3 kd_harvest.py --setup                 # 一次性：装系统 CA + 设代理（root）
+mitmdump -p 8080 -s harvest_addon.py --set confdir=/tmp/mitm
+#   → 在 App 里把那本书从第 1 页翻到最后一页
+python3 kd_harvest.py --out ~/下载/快对答案 --pdf
+```
+
+`harvest_addon.py` 只记 `scanimg` 的请求，`kd_harvest.py` 去重、按书分文件夹、
+下载原图（1480×2176）并合成 PDF。用真实 CDN 地址测过：3 页 → 3 张原图 → 1.7MB PDF。
+
+这条路不需要 frida（两种架构都注入失败）、不需要 root 做内存分析，只需要一次翻页。

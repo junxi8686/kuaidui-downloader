@@ -266,6 +266,8 @@ kuaidui-downloader/
 │  ├─ kd_capture.js          frida 脚本：抄 App 的 JSON（另一条路）
 │  ├─ kd_export.py           抓包日志 → 图片 / PDF
 │  ├─ run_capture.sh         一键部署 frida-server 并注入
+│  ├─ kd_harvest.py          翻页收割：抓 App 解密后的原图直链 → PDF（绕开 RC4）
+│  ├─ harvest_addon.py       mitmproxy 插件：只记 scanimg 请求
 │  └─ kd_shots.py            adb 截图兜底
 ├─ tests/
 │  ├─ harness.js             在 node 里模拟 chrome.*，真跑一遍后台逻辑
