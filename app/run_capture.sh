@@ -34,7 +34,7 @@ if ! adb get-state >/dev/null 2>&1; then
        sudo waydroid shell setprop service.adb.tcp.port 5555
        sudo waydroid shell stop adbd
        sudo waydroid shell start adbd
-       adb connect 192.168.240.112:5555
+       adb connect <WAYDROID_IP>:5555
   2) 真机：打开「开发者选项 → USB 调试」，插上数据线，adb devices 能看到就行。
 EOF
   exit 1

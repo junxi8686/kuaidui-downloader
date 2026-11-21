@@ -112,7 +112,7 @@
 # 1. 开 adb（宿主机）
 sudo waydroid shell setprop service.adb.tcp.port 5555
 sudo waydroid shell stop adbd && sudo waydroid shell start adbd
-adb connect 192.168.240.112:5555     # IP 见 waydroid status
+adb connect <WAYDROID_IP>:5555        # IP 见 waydroid status
 
 # 2. 客户端
 pip install frida-tools
