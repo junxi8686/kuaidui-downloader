@@ -49,6 +49,7 @@ rpc.exports = {
   /* 当前状态 */
   state: function () {
     var out = { ready: false, cuid: null };
+    try { out.secret_md5 = rpc.exports.secretMd5(); } catch (e) { }
     try {
       var app = Java.use('com.baidu.homework.base.InitApplication');
       out.cuid = app.getCuid();
@@ -81,6 +82,29 @@ rpc.exports = {
     var v = Java.use(NATIVE).nativeGetSign(param);
     log('signRaw -> ' + v);
     return v;
+  },
+
+  /*
+   * md5(SECRET)：nativeGetSign 里唯一的秘密只以 md5 的形式进入公式
+   *   sign_core = md5( "8&%d*[" + md5(SECRET) + "]@" + paramString )
+   * SECRET 存在 libbaseutil.so 的数据区（相对 .so 基址 0xa0d4，是个 char*）。
+   * 取到之后 md5 一次，就是「一次握手、长期离线」要的那个常量。
+   */
+  secretMd5: function () {
+    ensureToken();
+    var mod = Process.getModuleByName('libbaseutil.so');
+    var p = mod.base.add(0xa0d4).readPointer();
+    if (p.isNull()) throw new Error('0xa0d4 还是空：nativeSetToken 没成功');
+    var secret = p.readUtf8String();
+    var md = Java.use('java.security.MessageDigest').getInstance('MD5');
+    var bytes = Java.array('byte', Array.prototype.map.call(secret, function (c) {
+      return (c.charCodeAt(0) & 0xff) > 127 ? (c.charCodeAt(0) & 0xff) - 256 : (c.charCodeAt(0) & 0xff);
+    }));
+    var out = md.digest(bytes);
+    var hex = '';
+    for (var i = 0; i < out.length; i++) hex += ('0' + (out[i] & 0xff).toString(16)).slice(-2);
+    log('secretMd5 -> ' + hex);
+    return hex;
   },
 
   /* 直接看一眼内部参数（调试用） */

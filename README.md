@@ -13,7 +13,7 @@
 - **两种形态**：页面内浮层面板（单本 / 批量）、工具栏弹窗（关键词搜书 + 勾选下载）
 - **两套皮**：浅色「极简白」/ 深色「深色高级」，跟随系统，也可手动切换，改 `tokens.css` 一个文件全套生效
 - **不 eval**：MV3 禁止执行远端代码，所以自己写了个只认「JSON 子集 + 形参引用」的 Nuxt 数据解析器
-- **整本答案**：接一台能跑快对的安卓设备（root + frida），跑 `app/kd_bridge_server.py`，面板会多出「下载全书」，点一下就是整本 18 页（走 App 自己的签名）
+- **整本答案（两种）**：① **一次性取密钥**——任意能跑快对的设备 hook 一次拿到 `secret_md5`+`cuid`，填进插件，之后纯浏览器签名，整本直接下，不再需要设备；② 常驻本地桥——设备一直开着时面板走桥实时签
 - **附赠 App 侧脚本**：Frida 抓包 + adb 截图两条路，用来导出网页端拿不到的整本答案
 
 > **先说清楚能力边界**：快对网页端对每本书只放出**前 3 页**答案原图（实测 20 本，全书 4~76 页的都只给 3 页），这是服务端就不下发，不是插件限制。整本要走 App 那一侧，见 [② App 抓包](#-app-抓包整本答案)。
@@ -160,7 +160,33 @@ python3 kd_shots.py --out ~/下载/快对答案截图 --pages 40 --pdf
 
 ---
 
-## ④ 本机桥：让浏览器用上 App 的签名
+## ④ 整本答案：一次取密钥，之后纯浏览器
+
+`sign` 的公式是 `md5("8&%d*[" + md5(SECRET) + "]@" + 参数串)` —— **只用 SECRET 的 md5**。
+所以不需要一直开着设备：从任意一台能跑快对的机器上 hook 一次，拿到 `secret_md5`（32 位 hex）和 `cuid`，
+填进插件，之后签名全在浏览器里完成。
+
+```bash
+# 设备侧（Waydroid / 真机，root + frida）
+frida -U -f com.kuaiduizuoye.scan -l app/kd_bridge.js
+
+# 本机
+pip install frida
+python3 app/kd_bridge_server.py --port 8710
+python3 app/kd_secret.py          # 打印 secret_md5 + cuid，并写 token.json
+```
+
+```
+secret_md5 : 3f2a……（32 位 hex）
+cuid       : ……
+```
+
+把这两个值填进插件弹窗（「整本答案 · 本地密钥」→ 保存）。然后打开任意书本页，
+面板会多出 **「下载全书（N 页 · 本地签名）」**——点它就下整本，**不再需要设备、不需要桥、不需要 App**。
+
+> 密钥与设备绑定：换设备/重装 App 后 `secret_md5` 会变，重跑一次 `kd_secret.py` 即可。
+
+## ⑤ 本机桥：设备一直开着时实时签
 
 App 的接口是 `POST https://www.kuaiduizuoye.com/kdtools/book/downloadanswer?bookId=…&pageNo=…`，
 要 `sign`（antispam 令牌 + native 签名）。纯浏览器算不出来——所以换个思路：**让 App 自己签**。
@@ -202,8 +228,11 @@ python3 app/kd_full.py --book <bookId> --bridge http://127.0.0.1:8710 --out ~/�
 | host / path / 方法 | `www.kuaiduizuoye.com` + `/kdtools/book/downloadanswer` + **POST** | ✅ 实测打通（之前 404 是 host 错 + 用了 GET） |
 | 参数串 | `Base64(排序后的 k=v 用 & 连接)` | ✅ Python / JS 逐字节一致 |
 | sign 主体 | `md5("8&%d*[" + md5(SECRET) + "]@" + paramString)` | ✅ 从 `nativeGetSign`（0x1054）反汇编得出 |
-| SECRET | `nativeInitBaseUtil → POST /pluto/app/antispam → nativeSetToken` | ❌ 只有链路，没拿到值 |
-| 离线复算 | unicorn 模拟 `libbaseutil.so` | ⚠️ 能跑完设备信息段，服务端回 `errNo 7 antispam data error` |
+| SECRET | `nativeInitBaseUtil → POST /pluto/app/antispam → nativeSetToken` | ⚠️ 设备侧 hook 一次即可；纯离线造不出来 |
+| antispam blob | 8 字节分组 ECB / PKCS5，密钥 `@fG2SuLA` | ⚠️ **不是标准 DES**（实测 `E("AAAAAAAA")=036114e86c6052bb`），静态硬啃不划算 |
+
+**结论**：完全零设备地在本地造出 antispam blob 不划算（那套分组密码是改过的），
+但只需要 **一次** 设备介入换到 `secret_md5`，之后就是纯浏览器。
 
 所以现在没有「纯浏览器复刻签名」这条路：**要么用桥让 App 签，要么就没有整本**。细节和证据都在
 [app/REVERSE.md](app/REVERSE.md)。
@@ -231,6 +260,7 @@ kuaidui-downloader/
 │  ├─ kd_sign.py / kd_sign.js 已复刻的两层签名（含浏览器可用的 KdBridge 客户端）
 │  ├─ kd_bridge_server.py    本地桥：把 App 的签名能力暴露成 HTTP
 │  ├─ kd_bridge.js           frida 脚本：给桥提供签名与请求
+│  ├─ kd_secret.py           一次性取 secret_md5 + cuid（填进插件用）
 │  ├─ kd_native_emu.py       unicorn 模拟 libbaseutil.so（研究用）
 │  ├─ kd_capture.js          frida 脚本：抄 App 的 JSON（另一条路）
 │  ├─ kd_export.py           抓包日志 → 图片 / PDF

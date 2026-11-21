@@ -140,11 +140,40 @@
     setStatus(msg.text);
   });
 
+  /* ---------- 本地密钥 ---------- */
+
+  function loadKeys() {
+    chrome.storage.local.get({ secretMd5: '', cuid: '' }, function (v) {
+      $('secret').value = v.secretMd5 || '';
+      $('cuid').value = v.cuid || '';
+      updateKeyState(v.secretMd5, v.cuid);
+    });
+  }
+
+  function updateKeyState(secret, cuid) {
+    var ok = /^[0-9a-fA-F]{32}$/.test((secret || '').trim()) && (cuid || '').trim();
+    $('keyState').textContent = ok ? '已配置，可用整本下载' : '未配置（整本下载不可用）';
+  }
+
+  $('saveKey').onclick = function () {
+    var secret = $('secret').value.trim().toLowerCase();
+    var cuid = $('cuid').value.trim();
+    if (secret && !/^[0-9a-f]{32}$/.test(secret)) {
+      $('keyState').textContent = 'secret_md5 必须是 32 位十六进制';
+      return;
+    }
+    chrome.storage.local.set({ secretMd5: secret, cuid: cuid }, function () {
+      updateKeyState(secret, cuid);
+      setStatus(secret && cuid ? '密钥已保存' : '密钥已清空');
+    });
+  };
+
   /* ---------- 初始化 ---------- */
 
   if (chrome.runtime && chrome.runtime.getManifest) {
     $('ver').textContent = 'v' + chrome.runtime.getManifest().version;
   }
+  loadKeys();
   chrome.storage.local.get({ imageWidth: 'origin', kd_theme: 'auto' }, function (v) {
     $('width').value = v.imageWidth;
     // 面板里点过「外观」的话，弹窗跟着走；auto 就交给系统媒体查询

@@ -13,6 +13,7 @@
     ids: [],
     running: false,
     bridge: { ok: false, ready: false },
+    signReady: false,
     lastUrl: location.href
   };
 
@@ -283,6 +284,9 @@
         hint.textContent = state.bridge.ready
           ? '网页端每本书只放出前 ' + state.images.length + ' 页（官方共 ' + d.answerCount +
             ' 页）。本机 App 已连上，点上面的按钮拿整本。'
+          : state.signReady
+          ? '网页端每本书只放出前 ' + state.images.length + ' 页（官方共 ' + d.answerCount +
+            ' 页）。已配置本地密钥，点上面的按钮拿整本。'
           : '网页端每本书只放出前 ' + state.images.length + ' 页（这本书官方共 ' + d.answerCount +
             ' 页），这是快对自己的限制。要整本只能在快对 App 里看。';
       }
@@ -314,6 +318,10 @@
   /* ---------- 桥接：整本 ---------- */
 
   function checkBridge() {
+    send({ type: 'KD_SIGN_STATUS' }).then(function (r) {
+      var ready = !!(r && r.ok && r.configured);
+      if (ready !== state.signReady) { state.signReady = ready; if (state.detail) render(); }
+    });
     send({ type: 'KD_BRIDGE_HEALTH' }).then(function (res) {
       var health = res && res.health;
       var next = {
@@ -330,12 +338,59 @@
     var row = $('actions2');
     row.innerHTML = '';
     var need = (d.answerCount || 0) > state.images.length;
-    if (!state.bridge.ready || !need) { row.classList.add('hidden'); return; }
-    var b = btn('下载全书（' + d.answerCount + ' 页 · 走本机 App）', 'primary');
+    if (!need || (!state.bridge.ready && !state.signReady)) { row.classList.add('hidden'); return; }
+
+    var b;
+    if (state.bridge.ready) {
+      b = btn('下载全书（' + d.answerCount + ' 页 · 走本机 App）', 'primary');
+      b.onclick = runFull;
+    } else {
+      b = btn('下载全书（' + d.answerCount + ' 页 · 本地签名）', 'primary');
+      b.onclick = runFullLocal;
+    }
     b.disabled = state.running;
-    b.onclick = runFull;
     row.appendChild(b);
     row.classList.remove('hidden');
+  }
+
+  async function runFullLocal() {
+    if (state.running || !state.detail) return;
+    state.running = true;
+    render();
+    setPct(5);
+    setStatus('用本地密钥签全书…');
+
+    var res = await send({
+      type: 'KD_LOCAL_FETCH',
+      jobId: 'local-' + Date.now(),
+      bookId: state.detail.bookId,
+      maxPages: state.detail.answerCount || 200
+    });
+    if (!res || !res.ok || !res.images || !res.images.length) {
+      state.running = false;
+      render();
+      setPct(0);
+      setStatus('取全书失败：' + ((res && res.error) || '检查密钥是否配好'), true);
+      return;
+    }
+
+    state.images = res.images;
+    state.detail.images = res.images;
+    setStatus('拿到 ' + res.images.length + ' 页，开始下载…');
+    var options = await getOptions();
+    var run = await send({
+      type: 'KD_RUN',
+      jobId: 'local-dl-' + Date.now(),
+      mode: 'single',
+      format: 'zip',
+      detail: state.detail,
+      images: res.images,
+      options: options
+    });
+    state.running = false;
+    render();
+    if (!run || !run.ok) { setPct(0); setStatus('失败：' + ((run && run.error) || '后台无响应'), true); }
+    else { setPct(100); setStatus('整本已保存：' + run.filename); }
   }
 
   async function runFull() {

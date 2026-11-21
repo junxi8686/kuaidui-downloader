@@ -95,8 +95,18 @@ def md5hex(s) -> str:
 # --------------------------------------------------------------------------- #
 def sign_core_from_secret(secret: str, param_str: str) -> str:
     """sign_core = md5( "8&%d*[" + md5hex(SECRET) + "]@" + paramString )"""
-    buf = f"{SIGN_PREFIX}[{md5hex(secret)}]@{param_str}"
-    return md5hex(buf)
+    return sign_core_from_secret_md5(md5hex(secret), param_str)
+
+
+def sign_core_from_secret_md5(secret_md5: str, param_str: str) -> str:
+    """直接吃 md5(SECRET) 这 32 位 hex —— 离线的关键。
+
+    SECRET 本身取不到，但公式里只用到它的 md5；只要从真机 hook 一次
+    （app/kd_bridge.js 的 secretMd5()），以后任何参数都能纯 Python 签。
+    """
+    if not secret_md5 or len(secret_md5) != 32:
+        raise ValueError("secret_md5 必须是 32 位 hex")
+    return md5hex(f"{SIGN_PREFIX}[{secret_md5}]@{param_str}")
 
 
 def sign_value(pairs, t_seconds=None, kak_ms=None, native_sign_core=None) -> str:
@@ -115,13 +125,21 @@ def sign_value(pairs, t_seconds=None, kak_ms=None, native_sign_core=None) -> str
 
 
 def build_query(pairs, sign=None, tips=True) -> str:
-    """把业务参数 + 公共参数 + sign 拼成 query string（顺序按传入 dict）。"""
+    """把业务参数 + 公共参数 + sign 拼成 query string。
+
+    注意 sign 是**原样拼接**的：App 里 `Net.appendSign` 直接
+        sb.append("&sign="); sb.append(str);
+    而 str = "<core>&_t_=<秒>&kakorrhaphiophobia=<毫秒>"，所以 `_t_` 和
+    `kakorrhaphiophobia` 会以**独立顶层参数**的形式出现在 URL 上
+    （服务端缺了它们会回 5110）。这一点用 urlencode 编码 sign 会出错。
+    """
     q = dict(pairs)
-    if sign:
-        q["sign"] = sign
     if tips:
         q["__tips__"] = "1"     # HWNetwork.TIPS_PARAM，由 o.java 的 UrlRewriter 追加
-    return urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
+    qs = urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
+    if sign:
+        qs += "&sign=" + str(sign)
+    return qs
 
 
 # --------------------------------------------------------------------------- #
@@ -169,6 +187,36 @@ class BridgeCore:
         return res["sign"]
 
 
+class LocalCore:
+    """纯离线签名：只要一个 md5(SECRET)（32 位 hex），不需要设备、不需要 .so。
+
+    这个值由 sign 公式决定，和 paramString 无关；拿到后可以长期复用
+    （前提是服务端给该 cuid 的令牌没被换掉）。
+    """
+
+    def __init__(self, secret_md5=None, token_file=None, cuid=None):
+        self.path = token_file or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "token.json")
+        data = {}
+        if secret_md5 is None and os.path.exists(self.path):
+            try:
+                data = json.load(open(self.path, encoding="utf-8"))
+            except ValueError:
+                data = {}
+            secret_md5 = data.get("secret_md5") or data.get("md5_secret")
+        if not secret_md5:
+            raise RuntimeError(
+                "没有 md5(SECRET)：先把真机的 %s 填进去（见 REVERSE.md §6.5.5）" % self.path)
+        self.secret_md5 = secret_md5.strip()
+        self.cuid = cuid or data.get("cuid") or ""
+
+    def __call__(self, param_str: str) -> str:
+        return sign_core_from_secret_md5(self.secret_md5, param_str)
+
+    def sign(self, pairs) -> str:
+        return sign_value(pairs, native_sign_core=self.__call__)
+
+
 class EmuCore:
     """用 unicorn 直接跑 libbaseutil.so（实验性）。
 
@@ -208,7 +256,33 @@ def get_core(kind="bridge", **kw):
         return BridgeCore(kw.get("base", "http://127.0.0.1:8710"))
     if kind == "emu":
         return EmuCore(**{k: v for k, v in kw.items() if k in ("so_path", "cuid")})
+    if kind == "local":
+        return LocalCore(**{k: v for k, v in kw.items()
+                            if k in ("secret_md5", "token_file", "cuid")})
     raise ValueError(f"未知的 SignCore: {kind}")
+
+
+def fetch_token(bridge="http://127.0.0.1:8710", token_file=None, cuid=None):
+    """一次性握手：从真机桥取 md5(SECRET) 并写进 token.json。
+
+    之后就可以 `LocalCore(token_file=...)` 纯离线签名，不再需要设备。
+    """
+    br = BridgeCore(bridge)
+    info = br.health()
+    secret_md5 = info.get("secret_md5")
+    if not secret_md5:
+        res = br._post("/secret", {})
+        secret_md5 = (res or {}).get("secret_md5")
+    if not secret_md5:
+        raise RuntimeError("桥没有返回 secret_md5：确认 kd_bridge.js 是新版且 App 已完成握手")
+    path = token_file or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "token.json")
+    payload = {"secret_md5": secret_md5,
+               "cuid": cuid or info.get("cuid") or "",
+               "fetched_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return payload
 
 
 if __name__ == "__main__":

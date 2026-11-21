@@ -15,8 +15,9 @@
 | 参数 | `bookId`（32 位 hex）、`pageNo`（**从 0 开始**）；其余全是公共参数 | 反编译 + 实测 |
 | 要不要签名 | **要**。无 `sign` → `5103`；有 `sign` 但服务端没有该 cuid 的 antispam 令牌 → `errNo 6` | 实测 |
 | 签名算法 | 4 层（见 §4）。**第 1 层（paramString）已复刻并 Python/JS 双向交叉验证；第 2 层（nativeGetSign 的 md5 拼串）形态已确认**；第 3 层（SECRET 从 `nativeInitBaseUtil → /pluto/app/antispam → nativeSetToken` 来）只有链路、没拿到值 | 反编译 + .so 反汇编 + 模拟器运行时追踪 |
-| 纯算法能不能独立跑 | **目前不能**。卡在 antispam 握手：我们自己造的 `signA` 被服务端判 `errNo 7 antispam data error`（§6） | 实测 |
+| 纯算法能不能独立跑 | **目前不能**。卡在 antispam 握手：`/pluto/app/antispam` 对任何 `data`（空串到 224hex、换编码/换 host/换 appId/换版本）都回同一句 `errNo 7 antispam data error`，而 `data` 是 native 用一套非标准分组密码产出的（§6.5）。同 host 的 `/pluto/publish/checkappupdate` 不签名就 `errNo 0`，说明是 antispam 端点本身在卡 | 实测 + 反汇编 |
 | 网页端 | 确实只有 3 页（`oriAnswers` 3 条，`answerCount` 18） | 实测 |
+| 要不要账号 | **不要**。匿名就能拿到 `oriAnswers`；所有报错里从未出现 `USER_NOT_LOGIN`。缺的只是设备令牌 | 实测 |
 
 **能直接用的东西**：
 
@@ -334,6 +335,115 @@ GetMethodID hashCode / toChars / toCharsString → CallIntMethod / CallObjectMet
 
 ---
 
+## 6.5 无设备复现 antispam（第二轮，结论：走不通）
+
+目标是把 `nativeInitBaseUtil → /pluto/app/antispam → nativeSetToken` 这段握手也搬到脚本里，
+从而彻底去掉设备依赖。结论先说：**这一步在无设备条件下复现不了**，下面是完整证据。
+
+### 6.5.1 握手请求的真实形状
+
+```java
+// com/baidu/homework/common/net/model/v1/PlutoAntispam.java
+public static final String PATH = "/pluto/app/antispam";
+this.__pid  = "antispam";
+this.__method = 1;                    // POST
+getParams() -> {"data": signA}        // 表单只有一个字段
+toString()  -> getHost(pid) + PATH + "?data=" + encode(signA)
+```
+
+发起方（`com/zuoyebang/baseutil/a.java:78-84`）：
+
+```java
+a2 = NativeHelper.nativeInitBaseUtil(application, cuid);          // signA
+PlutoAntispam p = (PlutoAntispam) Net.postSync(
+        PlutoAntispam.Input.buildInput(a2), PlutoAntispam.class);
+a3 = p.data;                                                      // signB
+NativeHelper.nativeSetToken(application, cuid, a2, a3);
+```
+
+`Net.postSync(input, cls)` 走的是两参版本 → `appendUniqueCommonParamsForInputBase`（**不追加 sign**），
+然后 `HWRequest.getParams()` 会把 query 里的键值再解析成 POST body（`HWRequest.java:390-410`），
+所以真实请求是「query + body 各带一遍全部参数」。
+
+host 方面：`getHost(pid)` 里 `pid="antispam"` 不在 host map 中 → 仍是 `www.kuaiduizuoye.com`
+（`o.java:48-53`；注意 `pluto.zuoyebang.com` 只在 `pid="userinfra"` 这类映射里出现，
+而且 `h.d().y` 不含 `/`，`lastIndexOf("/")==-1` 时代码直接 return host，不做域名替换）。
+
+### 6.5.2 实测矩阵：服务端对所有输入回同一句
+
+全部 `POST`，`data` 与公共参数一应俱全，逐个变体打（下表每一行都是一次真实请求）：
+
+| 变体 | 结果 |
+|---|---|
+| `data=` 空 / `abc` / 32hex / 112hex / 224hex / 448hex / 大写 hex | `errNo 7 antispam data error` |
+| `data` 放 body（body 只带 data / body 带全部参数） | 同上 |
+| `data` = JSON、JSON 的 base64、`k=v` 串、`k=v` 串 base64 | 同上 |
+| `data` = 56 字节密文的 hex / base64 / urlsafe-base64 | 同上 |
+| `Content-Type: application/json` / `application/octet-stream`（body 直接塞二进制） | 同上 |
+| 带 `sign=init_error&_t_=..&kakorrhaphiophobia=0`（未初始化时 App 会带的形态） | 同上 |
+| 换 host：`pluto.zuoyebang.com`、`apivip.kuaiduizuoye.com` | 同上（apivip 恒 302） |
+| 换 path：`/napi/user/antispam`（`o.java` 的 UrlRewriter 会把 pluto 路径改写成这个） | 同上 |
+| 换 appId：scancode / college / kuaiduizuoye / zybang | 同上 |
+| 换版本：vc=3000/3600/4000/4400/4800/5000/5100/5140 | 同上 |
+
+两个例外：
+
+- `/pluto/app/antispam/`（多一个斜杠）和 `/pluto/app/antispam/v1` → `{"errNo":6,"errstr":"antispam sign error"}`，
+  这是**网关层另一个校验**（和 `/kdtools/web/search` 未签名时同一句），不是 antispam 服务的响应，
+  反过来说明：真正的 antispam 服务只挂在精确路径上。
+- `/pluto/publish/checkappupdate`（同 host、同 `/pluto/` 前缀）**完全不签名就返回 `errNo 0 success`**。
+  也就是说 pluto 这条管道是通的、网关没拦，**只有 antispam 这个端点对 `data` 内容有硬要求**。
+
+### 6.5.3 为什么判定「复现不了」
+
+1. `data` 必须是 `nativeInitBaseUtil` 产出的那个 blob，服务端会先解它，解不开就统一回 `errNo 7`
+   （空串、垃圾串、合法长度串、各种编码——全是同一句，说明判定发生在解密/验签的最外层）。
+2. 我们在 unicorn 里把 `libbaseutil.so` 跑起来，`nativeInitBaseUtil` 能跑完并返回 224 个 hex 字符，
+   但把这个自洽的 blob 交给服务端仍然 `errNo 7`。说明**模拟出来的 ciphertext 和真机的不同**。
+3. 该 cipher 的**结构**已经确定，但**实现不是任何常见原语**：
+
+   | 观测 | 依据 |
+   |---|---|
+   | 分组 8 字节、ECB 语义（相同明文块 → 相同密文块） | `0x3688("A"×24, "@fG2SuLA")` → 3 个完全相同的 8 字节块 + 1 个固定块 |
+   | 填充是 PKCS5 风格（块对齐时补满 8 字节 0x08） | 8→16、16→24、24→32、53→56 字节 |
+   | 密钥取 `.rodata 0x687c` 的 `@fG2SuLA` 8 字节 | `0x36a4: ldr r0,[r1]; ldr r1,[r1,#4]; strd r0,r1,[sp,#0x10]` |
+   | 不是标准 DES | `E("AAAAAAAA")` 期望 `036114e86c6052bb`，标准 DES(key=`@fG2SuLA`) 给 `8b99d06565618936` |
+   | 不是位序/字节序变体 | 试过输入/输出/密钥的逐字节位反转与块内逆序，全不匹配 |
+   | 不是 TEA/XTEA | key 补零/重复/补空格 × 大小端 × 32 轮，全不匹配 |
+   | 不是「密钥先做 md5」 | md5/sha1 派生的 8 字节密钥也试过 |
+
+   `.so` 里确实带了 `des.c`（`.rodata 0x6c62`）和一整套 S 盒/置换表，
+   但实际调用的这条路径输出与标准 DES 不符——很可能是被改过表的变体，或者密钥还叠了一层。
+
+4. 也就是说，能不能离线签名，取决于这套**非标准分组密码**能否被完全静态还原。
+   以当前证据（无设备、无真机对照样本）继续硬啃，收益不确定；先把结论钉死更有价值。
+
+### 6.5.4 顺带确认的两件事
+
+- **拿答案不需要登录**：书页/图片在匿名状态下可访问（我们全程没带任何 cookie 就拿到了 `oriAnswers`），
+  `downloadanswer` 的报错也从未出现 `USER_NOT_LOGIN`（`ErrorCode` 里存在这个分支）。
+  所以缺的只是**设备令牌**，不是账号。
+- **令牌是长期有效的（如果拿到）**：`baseutil/a.java` 把 `signA/signB` 写进
+  `LibPreference.KEY_ANTISPAM_SIGN_A/B`，每次启动优先读缓存，只有服务端回
+  `ANTISPAM_SIGNERR` 时才 `baseutil.a.a(elapsedRealtime)` 清空重来。
+  即一次握手拿到的令牌可跨重启复用，直到服务端判定失效。
+
+### 6.5.5 如果将来想做「一次性握手 + 之后纯脚本」
+
+需要一次性拿到 **`md5(SECRET)`**（注意不是 signA/signB 本身）：
+
+```
+sign_core = md5( "8&%d*[" + md5(SECRET) + "]@" + paramString )
+```
+
+只要那个 32 位 hex 常量到手，之后任何参数都能用纯 Python/JS 离线签（`kd_sign.sign_core_from_secret`）。
+它可以从一台设备的任一次请求里取：hook `nativeGetSign` 的入参（就是 `"8&%d*[...]@..."` 明文），
+或 hook 0xa0d4 指向的字符串后自己 md5。取到后写进 `app/token.json`，
+`kd_full.py --token-file` 即可全程离线使用（不需要再跑 .so）。
+在此之前，唯一可靠的全书通道仍是设备上的 frida 桥（§7.2）。
+
+---
+
 ## 7. 怎么用
 
 ### 7.1 现在就能跑（网页端，3 页）
@@ -368,7 +478,12 @@ python3 kd_full.py --book <bookId> --bridge http://127.0.0.1:8710 --out ~/下载
 | POST | `/init` | `{}` | `{"ok":true,"ready":bool}` 触发一次 antispam 握手 |
 | POST | `/sign` | `{"pairs":["bookId=..","pageNo=0","appId=scancode"]}` | `{"ok":true,"sign":"<core>&_t_=..&kakorrhaphiophobia=.."}` |
 | POST | `/sign_raw` | `{"param":"<base64>"}` | `{"ok":true,"sign":"<32hex>"}`（等价 nativeGetSign） |
+| GET/POST | `/secret` | — | `{"ok":true,"secret_md5":"<32hex>"}` —— **离线的钥匙** |
 | POST | `/downloadanswer` | `{"bookId":"..","pageNo":0}` | `{"ok":true,"imageUrl":"..."}` |
+
+> 拼 URL 时有个坑：`sign` 的值是**原样拼接**的，里面本来就有 `&_t_=..&kakorrhaphiophobia=..`，
+> 拼完 URL 上必须能看见 `_t_` 和 `kakorrhaphiophobia` 这两个**独立顶层参数**
+> （少了服务端回 `errNo 5110 lack time param: _t_`）。`kd_sign.build_query()` 已按此处理。
 
 `/sign` 用的是 `com.zuoyebang.baseutil.a.a(List<String>)`——让 App 自己补 `_t_` 和
 `kakorrhaphiophobia`，少一处可能算错的地方；`/sign_raw` 才是裸的 `nativeGetSign`。
@@ -382,7 +497,37 @@ const sign   = await bridge.sign({bookId, pageNo: 0, appId: 'scancode', cuid: '.
 const r = await bridge.downloadAnswer(bookId, 0);   // {ok:true, imageUrl:'...'}
 ```
 
-### 7.3 纯算法（不需要设备）—— 只能算到第 2 层
+### 7.3 一次性拿到 `md5(SECRET)` 之后：完全离线
+
+`sign_core = md5("8&%d*[" + md5(SECRET) + "]@" + paramString)`——公式里只用到 SECRET 的 md5，
+所以**只要那 32 位 hex**，之后任何参数都能纯 Python/JS 签，不用设备、不用 .so：
+
+```bash
+# 1) 找一个能跑快对的设备/模拟器，连一次 frida（只需一次）
+frida -U -f com.kuaiduizuoye.scan -l kd_bridge.js
+python3 kd_bridge_server.py --port 8710
+python3 -c "import kd_sign; print(kd_sign.fetch_token('http://127.0.0.1:8710'))"
+#    → 写出 app/token.json: {"secret_md5": "...", "cuid": "..."}
+
+# 2) 之后彻底离线
+python3 kd_full.py --book <bookId> --mode app --pdf
+```
+
+`kd_bridge.js` 里 `secretMd5()` 的做法：读 `libbaseutil.so` 基址 + `0xa0d4` 那个全局指针，
+拿到 SECRET 字符串，用 `MessageDigest("MD5")` 取 md5。§4 反汇编里 `nativeGetSign` 正是从这里取值。
+
+浏览器侧等价（`kd_sign.js`，已与 Python 逐字节对齐）：
+
+```js
+const sign = kdSign.signValueFromSecretMd5(secretMd5, {bookId, pageNo: 0, appId: 'scancode'});
+const qs   = kdSign.buildQuery({bookId, pageNo: 0, appId: 'scancode'}, sign);
+```
+
+**有效期怎么判断**：`secret_md5` 跟着服务端发的那枚令牌走；App 端把 signA/signB 存进
+`LibPreference`，只有收到 `ANTISPAM_SIGNERR` 才清空重来。所以只要令牌不失效就一直能用；
+一旦开始收到 `errNo 6`/签名错，重跑一次第 1 步即可。
+
+### 7.4 纯算法（不需要设备）—— 只能算到第 2 层
 
 ```python
 import kd_sign

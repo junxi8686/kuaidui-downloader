@@ -305,3 +305,68 @@ footer {
     transition: none !important;
   }
 }
+
+/* ---------- 本地密钥 ---------- */
+
+.keys {
+  margin: 0 14px var(--space-2);
+  border: var(--border-width) solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+}
+
+.keys > summary {
+  padding: 7px 10px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.keys > summary::-webkit-details-marker {
+  display: none;
+}
+
+.keys > summary::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+
+.keys[open] > summary::before {
+  content: "▾ ";
+}
+
+.keyrow {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 10px var(--space-2);
+  align-items: center;
+}
+
+.keyrow input {
+  flex: 1;
+  padding: 6px 8px;
+  border: var(--border-width) solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  outline: none;
+}
+
+.keyrow input:focus {
+  border-color: var(--primary);
+}
+
+.keyhint {
+  padding: 0 10px var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+.keyhint code {
+  font-size: var(--fs-xs);
+}

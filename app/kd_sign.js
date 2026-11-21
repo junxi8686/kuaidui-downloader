@@ -118,7 +118,46 @@
     return md5hex(SIGN_PREFIX + '[' + md5hex(secret) + ']@' + paramStr);
   }
 
+  /* ---------------- 2b) 用 md5(SECRET) 直接签（离线的关键） ---------------- */
+  /**
+   * SECRET 本身取不到，但公式里只用它的 md5；从真机 hook 一次
+   * （kd_bridge.js 的 secretMd5()）拿到那 32 位 hex，之后就能纯前端签。
+   */
+  function signCoreFromSecretMd5(secretMd5, paramStr) {
+    if (!secretMd5 || secretMd5.length !== 32) throw new Error('secret_md5 必须是 32 位 hex');
+    return md5hex(SIGN_PREFIX + '[' + secretMd5 + ']@' + paramStr);
+  }
+
   /* ---------------- 3) 完整 sign 值 ---------------- */
+  function signValueFromSecretMd5(secretMd5, pairs, tSeconds, kakMs) {
+    var t = tSeconds || Math.floor(Date.now() / 1000);
+    var kak = kakMs || Date.now();
+    var list = [];
+    if (Array.isArray(pairs)) list = pairs.slice();
+    else for (var k in pairs) if (Object.prototype.hasOwnProperty.call(pairs, k)) list.push(k + '=' + pairs[k]);
+    list.push('_t_=' + t);
+    list.push('kakorrhaphiophobia=' + kak);
+    var core = signCoreFromSecretMd5(secretMd5, paramString(list));
+    return core + '&_t_=' + t + '&kakorrhaphiophobia=' + kak;
+  }
+
+  /**
+   * 拼最终 URL 的 query。注意 sign 必须**原样拼接**：
+   * 服务端要求 _t_ / kakorrhaphiophobia 也作为独立顶层参数出现（缺了回 5110）。
+   */
+  function buildQuery(pairs, sign, tips) {
+    var items = [];
+    if (Array.isArray(pairs)) items = pairs.slice();
+    else for (var k in pairs) if (Object.prototype.hasOwnProperty.call(pairs, k)) items.push(k + '=' + pairs[k]);
+    if (tips !== false) items.push('__tips__=1');
+    var qs = items.map(function (kv) {
+      var i = kv.indexOf('=');
+      return encodeURIComponent(kv.slice(0, i)) + '=' + encodeURIComponent(kv.slice(i + 1));
+    }).join('&');
+    if (sign) qs += '&sign=' + sign;
+    return qs;
+  }
+
   function signValue(secret, pairs, tSeconds, kakMs) {
     var t = tSeconds || Math.floor(Date.now() / 1000);
     var kak = kakMs || Date.now();
@@ -167,6 +206,11 @@
     });
   };
   /** 直接拿某一页的图片直链 */
+  /** md5(SECRET)：离线的钥匙，拿到后就不需要再连设备 */
+  KdBridge.prototype.secret = function () {
+    return fetch(this.base + '/secret').then(function (r) { return r.json(); });
+  };
+  /** 直接拿某一页的图片直链 */
   KdBridge.prototype.downloadAnswer = function (bookId, pageNo) {
     return fetch(this.base + '/downloadanswer', {
       method: 'POST',
@@ -180,7 +224,10 @@
     md5hex: md5hex,
     paramString: paramString,
     signCore: signCore,
+    signCoreFromSecretMd5: signCoreFromSecretMd5,
     signValue: signValue,
+    signValueFromSecretMd5: signValueFromSecretMd5,
+    buildQuery: buildQuery,
     KdBridge: KdBridge
   };
 }));

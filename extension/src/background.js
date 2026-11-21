@@ -1,7 +1,7 @@
 /* 快对答案下载器 —— 后台（service worker）
  * 负责：抓页面 -> 解析 -> 取原图 -> 打包 ZIP / 合成 PDF -> chrome.downloads
  */
-importScripts('lib.js', 'zip.js', 'pdf.js');
+importScripts('lib.js', 'zip.js', 'pdf.js', 'kd-sign.js');
 
 var ORIGIN = 'https://m.kuaiduizuoye.com';
 var UA_HINT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
@@ -74,6 +74,73 @@ function sizeVariant(url, width) {
 }
 
 function pad(n, len) { var s = String(n); while (s.length < len) s = '0' + s; return s; }
+
+/* ---------------- 离线签名（只需一次性拿到 secret_md5） ----------------
+ * sign 公式里只用 md5(SECRET)，所以从真机 hook 一次 secret_md5 + cuid，
+ * 之后完全离线：浏览器自己签，不需要 App、不需要桥。
+ */
+
+async function getLocalSign() {
+  return new Promise(function (resolve) {
+    chrome.storage.local.get({ secretMd5: '', cuid: '' }, function (v) {
+      resolve({
+        secretMd5: (v.secretMd5 || '').trim().toLowerCase(),
+        cuid: (v.cuid || '').trim()
+      });
+    });
+  });
+}
+
+function signConfigured(cfg) {
+  return !!(cfg && /^[0-9a-f]{32}$/.test(cfg.secretMd5) && cfg.cuid);
+}
+
+async function localFetchPages(jobId, bookId, pages) {
+  var cfg = await getLocalSign();
+  if (!signConfigured(cfg)) throw new Error('还没配置离线密钥');
+
+  var images = [];
+  var limit = Math.max(1, Math.min(pages || 200, 200));
+  for (var p = 0; p < limit; p++) {
+    if (cancelled) break;
+    progress(jobId, '本地签名取第 ' + (p + 1) + ' 页…', Math.round((p + 1) / limit * 80));
+    var pairs = {
+      bookId: bookId,
+      pageNo: p,
+      appId: 'scancode',
+      cuid: cfg.cuid,
+      vc: '5140',
+      vcname: '5.14.0',
+      os: 'android',
+      sdk: '33',
+      pkgName: 'com.kuaiduizuoye.scan'
+    };
+    var sign;
+    try {
+      sign = kdSign.signValueFromSecretMd5(cfg.secretMd5, pairs);
+    } catch (e) {
+      throw new Error('签名失败：' + (e && e.message || e));
+    }
+    var url = 'https://www.kuaiduizuoye.com/kdtools/book/downloadanswer?' + kdSign.buildQuery(pairs, sign);
+    var res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'bookId=' + encodeURIComponent(bookId) + '&pageNo=' + p
+    });
+    var json = null;
+    try { json = await res.json(); } catch (e) { json = null; }
+    if (!json) throw new Error('服务端没返回 JSON（HTTP ' + res.status + '）');
+    if (json.errNo !== 0) {
+      throw new Error('服务端 errNo=' + json.errNo + ' ' + (json.errstr || '') +
+        (json.errNo === 6 ? '（令牌失效：需要重新取一次 secret_md5）' : ''));
+    }
+    var img = json.data && json.data.imageUrl;
+    if (!img) break;
+    if (images.indexOf(img) < 0) images.push(img);
+    await sleep(150);
+  }
+  return images;
+}
 
 /* ---------------- 本地桥（App 签名代理） ----------------
  * 快对整本答案要 App 的 antispam 令牌 + native 签名，纯浏览器算不出来。
@@ -331,6 +398,22 @@ async function handle(msg) {
 
     case 'KD_FETCH_BOOK':
       return { ok: true, detail: await fetchBook(msg.bookId) };
+
+    case 'KD_SIGN_STATUS': {
+      var cfg = await getLocalSign();
+      return { ok: true, configured: signConfigured(cfg) };
+    }
+
+    case 'KD_LOCAL_FETCH': {
+      cancelled = false;
+      var jid = msg.jobId || String(Date.now());
+      try {
+        var imgs2 = await localFetchPages(jid, msg.bookId, msg.maxPages);
+        return { ok: imgs2.length > 0, images: imgs2, error: imgs2.length ? null : '没取到图片' };
+      } catch (e) {
+        return { ok: false, error: String(e && e.message || e) };
+      }
+    }
 
     case 'KD_BRIDGE_HEALTH':
       return { ok: true, health: await bridgeHealth() };

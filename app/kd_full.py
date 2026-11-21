@@ -416,10 +416,13 @@ def main(argv=None):
     ap.add_argument("--out", default="~/下载/快对答案", help="输出目录（默认 ~/下载/快对答案）")
     ap.add_argument("--pdf", action="store_true", help="额外合成 PDF")
     ap.add_argument("--list", action="store_true", help="只打印直链，不下载")
-    ap.add_argument("--mode", choices=["auto", "api", "web"], default="auto",
-                    help="auto=先试 App 接口，失败退回网页端（默认）")
+    ap.add_argument("--mode", choices=["auto", "api", "app", "web"], default="auto",
+                    help="auto=先试 App 接口，失败退回网页端（默认）；"
+                         "api/app=只用 App 接口（拿全书）；web=只用网页端（前 3 页）")
     ap.add_argument("--bridge", default=None, metavar="URL",
                     help="真机签名桥地址，如 http://127.0.0.1:8710")
+    ap.add_argument("--token-file", default=None, metavar="PATH",
+                    help="离线令牌文件（含 md5(SECRET)），默认 app/token.json；有它就不需要设备")
     ap.add_argument("--cuid", default=os.environ.get("KD_CUID", ""), help="设备 cuid")
     ap.add_argument("--max-pages", type=int, default=60, help="最多翻多少页（默认 60）")
     ap.add_argument("--so", default=os.environ.get("KD_SO"), help="libbaseutil.so 路径（模拟器用）")
@@ -428,6 +431,8 @@ def main(argv=None):
                     help="覆盖公共参数，可重复")
     a = ap.parse_args(argv)
 
+    if a.mode == "app":
+        a.mode = "api"
     if not a.book:
         ap.error("至少给一个 --book <32位 bookId>")
     for b in a.book:
@@ -445,7 +450,12 @@ def main(argv=None):
     core = None
     if a.mode in ("api", "auto"):
         try:
-            if a.bridge:
+            token_path = a.token_file or os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "token.json")
+            if not a.bridge and os.path.exists(token_path):
+                core = kd_sign.LocalCore(token_file=token_path, cuid=cuid)
+                print("签名源：离线令牌 %s" % token_path)
+            elif a.bridge:
                 core = kd_sign.BridgeCore(a.bridge)
                 core.health()
                 print("签名源：真机桥 %s" % a.bridge)

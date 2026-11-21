@@ -104,6 +104,10 @@ class Agent:
         info = {"ok": True, "ready": False, "cuid": self.cuid}
         try:
             info.update(self._call("state") or {})
+            try:
+                info["secret_md5"] = self._call("secretMd5")
+            except Exception:
+                pass
         except Exception as e:
             info["error"] = str(e)
         return info
@@ -116,6 +120,10 @@ class Agent:
 
     def sign_raw(self, param):
         return {"ok": True, "sign": self._call("signRaw", param)}
+
+    def secret(self):
+        """md5(SECRET) —— 拿到它就能纯离线签名，见 REVERSE.md §6.5.5。"""
+        return {"ok": True, "secret_md5": self._call("secretMd5")}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -150,6 +158,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.agent.health())
             if u.path == "/init":
                 return self._json(self.agent.init())
+            if u.path == "/secret":
+                return self._json(self.agent.secret())
             if u.path == "/sign":
                 # 便于浏览器直接 GET：?pairs=bookId=x&pageNo=0（会按 & 切开）
                 q = urllib.parse.parse_qs(u.query, keep_blank_values=True)
@@ -177,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.agent.sign(payload.get("pairs") or []))
             if u.path == "/sign_raw":
                 return self._json(self.agent.sign_raw(payload.get("param") or ""))
+            if u.path == "/secret":
+                return self._json(self.agent.secret())
             if u.path == "/init":
                 return self._json(self.agent.init())
             if u.path == "/downloadanswer":

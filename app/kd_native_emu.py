@@ -525,8 +525,12 @@ class KDSo:
         done = STUB + 0xfc0
         uc.mem_write(done, struct.pack('<H', 0xe7fe))
         uc.reg_write(UC_ARM_REG_LR, done)
-        for i, a in enumerate(args):
-            uc.reg_write((UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3)[i], a)
+        regs = (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3)
+        for i, a in enumerate(args[:4]):
+            uc.reg_write(regs[i], a)
+        # AAPCS: 第 5 个及以后的参数放栈上（sp+0, sp+4, ...）
+        for k, a in enumerate(args[4:]):
+            self.w32(sp + 4 * k, a)
         uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | UC_HOOK_MEM_FETCH_UNMAPPED, self._memfault)
         uc.emu_start(addr | 1, done, count=40000000)
         r0 = uc.reg_read(UC_ARM_REG_R0)

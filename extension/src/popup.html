@@ -28,6 +28,22 @@
   </select>
 </div>
 
+<details class="keys" id="keys">
+  <summary>整本答案 · 本地密钥</summary>
+  <div class="keyrow">
+    <input type="text" id="secret" placeholder="secret_md5（32 位 hex）" spellcheck="false">
+    <input type="text" id="cuid" placeholder="cuid" spellcheck="false">
+  </div>
+  <div class="keyrow">
+    <button class="ghost" id="saveKey">保存</button>
+    <span class="keyhint" id="keyState">未配置</span>
+  </div>
+  <div class="keyhint">
+    这两个值只需取一次（见 README「④ 本机桥」里的 <code>/secret</code>）。配置后书本页会出现「下载全书」，
+    之后完全不用再连设备。
+  </div>
+</details>
+
 <div class="toolbar">
   <label class="chk"><input type="checkbox" id="all"> 全选</label>
   <span id="count">0 本已选</span>

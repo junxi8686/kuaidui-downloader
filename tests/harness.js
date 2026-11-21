@@ -56,13 +56,13 @@ const chrome = {
       });
     }
   },
-  storage: { local: { get: (d, cb) => cb(d), set: (v, cb) => cb && cb() } }
+  storage: { local: { get: (d, cb) => cb(Object.assign({}, d, process.env.FAKE_SECRET ? { secretMd5: process.env.FAKE_SECRET, cuid: process.env.FAKE_CUID || '0123456789abcdef0123456789abcdef' } : {})), set: (v, cb) => cb && cb() } }
 };
 
 /* ---- 模拟 importScripts（同一全局作用域） ---- */
 const sandbox = {
   chrome,
-  URL, Blob, TextEncoder, TextDecoder, Uint8Array, Int32Array, Promise, Date, Math, JSON,
+  URL, Blob, TextEncoder, TextDecoder, Buffer, btoa: (str) => Buffer.from(str, 'binary').toString('base64'), Uint8Array, Int32Array, Promise, Date, Math, JSON,
   setTimeout, clearTimeout, console, fetch: globalThis.fetch,
   location: { href: 'https://m.kuaiduizuoye.com/' },
   self: null
@@ -90,7 +90,12 @@ async function call(msg) {
 (async () => {
   const t0 = Date.now();
   try {
-    if (mode === 'bridge') {
+    if (mode === 'local') {
+      const st = await call({ type: 'KD_SIGN_STATUS' });
+      console.log('签名状态:', JSON.stringify(st));
+      const f = await call({ type: 'KD_LOCAL_FETCH', jobId: 'l', bookId, maxPages: 3 });
+      console.log('本地签名取页:', f.ok, (f.images || []).length, '页', f.error || '');
+    } else if (mode === 'bridge') {
       const h = await call({ type: 'KD_BRIDGE_HEALTH' });
       console.log('桥 /health:', JSON.stringify(h));
       const f = await call({ type: 'KD_BRIDGE_FETCH', jobId: 'b', bookId, maxPages: 5 });
