@@ -230,7 +230,7 @@ python3 app/kd_full.py --book <bookId> --bridge http://127.0.0.1:8710 --out ~/�
 | sign 主体 | `md5("8&%d*[" + md5(SECRET) + "]@" + paramString)` | ✅ 从 `nativeGetSign`（0x1054）反汇编得出 |
 | SECRET | `nativeInitBaseUtil → POST /pluto/app/antispam → nativeSetToken` | ⚠️ 设备侧 hook 一次即可；纯离线造不出来 |
 | antispam blob | 8 字节分组 ECB / PKCS5，密钥 `@fG2SuLA` | ✅ **已复现**：就是标准 DES，只是输入/输出每个字节按位反序 |
-| 变体 DES 实现 | `extension/src/kd-des.js` | ✅ 纯 JS，四个向量全过（含 `E("ABCDEFGH",0×8)=d303b8ba2d8bd76e`） |
+| 变体 DES 实现 | `extension/src/kd-des.js` | ⚠️ 纯 JS 已实现；**零密钥向量逐字节吻合**，但非零密钥的所有对照都来自仿真器，而仿真器前后两次给出的密钥路径自相矛盾（见 REVERSE.md §6.5.5b），需要一份真机样本才能判定 |
 
 **结论**：完全零设备地在本地造出 antispam blob 不划算（那套分组密码是改过的），
 但只需要 **一次** 设备介入换到 `secret_md5`，之后就是纯浏览器。
