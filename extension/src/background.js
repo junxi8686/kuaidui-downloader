@@ -1,7 +1,7 @@
 /* 快对答案下载器 —— 后台（service worker）
  * 负责：抓页面 -> 解析 -> 取原图 -> 打包 ZIP / 合成 PDF -> chrome.downloads
  */
-importScripts('lib.js', 'zip.js', 'pdf.js', 'kd-sign.js');
+importScripts('lib.js', 'zip.js', 'pdf.js', 'kd-sign.js', 'kd-des.js');
 
 var ORIGIN = 'https://m.kuaiduizuoye.com';
 var UA_HINT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';

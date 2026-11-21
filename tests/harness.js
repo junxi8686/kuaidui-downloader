@@ -78,6 +78,7 @@ function loadScript(file) {
 
 sandbox.importScripts = (...files) => files.forEach(loadScript);
 
+loadScript('kd-des.js');
 loadScript('background.js');
 
 async function call(msg) {
@@ -90,7 +91,21 @@ async function call(msg) {
 (async () => {
   const t0 = Date.now();
   try {
-    if (mode === 'local') {
+    if (mode === 'des') {
+      const D = sandbox.kdDes;
+      const b = str => new Uint8Array([...str].map(c => c.charCodeAt(0)));
+      const hx = a => Buffer.from(a).toString('hex');
+      const fx = str => new Uint8Array(str.match(/../g).map(h => parseInt(h, 16)));
+      const cases = [
+        ['标准 133457799BBCDFF1', hx(D.desBlock(fx('0123456789ABCDEF'), fx('133457799BBCDFF1'))), '85e813540f0ab405'],
+        ['标准 @fG2SuLA/AAAAAAAA', hx(D.desBlock(b('AAAAAAAA'), b('@fG2SuLA'))), '8b99d06565618936'],
+        ['快对变体 ABCDEFGH/全零', hx(D.kdBlock(b('ABCDEFGH'), new Uint8Array(8))), 'd303b8ba2d8bd76e']
+      ];
+      let bad = 0;
+      cases.forEach(([n, got, exp]) => { const ok = got === exp; if (!ok) bad++; console.log(ok ? '✓' : '✗', n, got); });
+      console.log(bad ? '有 ' + bad + ' 个不对' : '三个向量全对，变体 DES 可复现');
+      process.exit(bad ? 1 : 0);
+    } else if (mode === 'local') {
       const st = await call({ type: 'KD_SIGN_STATUS' });
       console.log('签名状态:', JSON.stringify(st));
       const f = await call({ type: 'KD_LOCAL_FETCH', jobId: 'l', bookId, maxPages: 3 });
