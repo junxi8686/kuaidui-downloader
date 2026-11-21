@@ -104,6 +104,7 @@ def main():
     ap.add_argument("--cert", default="/tmp/mitm/mitmproxy-ca-cert.pem")
     ap.add_argument("--host", default="192.168.240.1")
     ap.add_argument("--port", default="8080")
+    ap.add_argument("--run", action="store_true", help="起 mitmdump 开始抓，Ctrl+C 结束后自动导出")
     ap.add_argument("--list", action="store_true", help="只列出抓到的页，不下载")
     ap.add_argument("--out", default=os.path.expanduser("~/下载/快对答案"))
     ap.add_argument("--pdf", action="store_true")
@@ -111,6 +112,21 @@ def main():
 
     if args.setup:
         return do_setup(args.cert, args.host, args.port)
+
+    if args.run:
+        import subprocess as sp
+        here = os.path.dirname(os.path.abspath(__file__))
+        cmd = [sys.executable, "-m", "mitmproxy.tools.main", "mitmdump",
+               "-p", str(args.port), "--set", "confdir=/tmp/mitm",
+               "-s", os.path.join(here, "harvest_addon.py")]
+        print("起抓包：", " ".join(cmd))
+        print(f"现在去 App 里把那本书从第 1 页翻到最后一页，翻完回来按 Ctrl+C。\n")
+        proc = sp.Popen(cmd)
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            proc.terminate()
+        print("\n抓包结束，开始导出…")
 
     recs = collect()
     if not recs:
