@@ -37,6 +37,8 @@
 
 ### 安装
 
+不想自己打包的话，直接下现成的：[**Releases → kuaidui-downloader-extension.zip**](https://github.com/junxi8686/kuaidui-downloader/releases/latest/download/kuaidui-downloader-extension.zip)，解压后按下面第 3 步加载。
+
 1. 打开 `chrome://extensions/`（Edge 是 `edge://extensions/`）
 2. 右上角打开「开发者模式」
 3. 点「加载已解压的扩展程序」，选这个 `extension/` 目录
