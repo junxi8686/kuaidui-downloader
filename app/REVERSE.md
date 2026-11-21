@@ -775,3 +775,28 @@ mitmproxy 系统证书 + 全局代理，全链路抓包。
   2. 直接从设备内存里读 RC4 key（Java String，需要定位）
   3. 用 App 自己解密：抓 App 请求 `kd-book.cdnjtzy.com/scanimg/...` 的明文 URL（mitm 已能看到），
      即「App 翻页 + 抓包」就能拿到原图直链 —— 不依赖上面任何一步
+
+## 9.4 补记：JNI 符号表（`.data.rel.ro` 0x8dbc）
+
+按 12 字节一条解出来，函数指针在第 1 个字段（Thumb，最低位是 1）：
+
+| 名称 | 地址 |
+|---|---|
+| nativeInitBaseUtil | 0x9dbc* |
+| nativeSetToken | 0x0d15 |
+| nativeGetSign | 0x0e91 |
+| nativeGetKey | 0x1055 → Thumb 入口 **0x1054** |
+
+> 修正一处旧结论：之前把 0x1054 当成 `nativeGetSign`，实际那是 **`nativeGetKey`**。
+> （不过 sign 公式已用真机请求验证过，结论不受影响。）
+
+`nativeGetKey` 的输入是 `String.valueOf(BaseApplication.j())` = `"660"`（versionCode）。
+`BaseApplication.java:170` 里 `s = 660`。
+
+拿 `.rodata` 里 192 个字符串 × 6 种拼法（原文 / md5 / MD5 / md5(vc+s) / md5(s+vc) / vc+s）共 1152 个候选当 RC4 密钥，
+去解上面那个 imageUrl 密文，**全部不中** → 说明 `nativeGetKey` 不是简单哈希，里面还有别的处理
+（0x1054 处先做 JNI 字符串转换，再 `bl 0x3978` / `bl 0x1ef0`，真正算法在这两个里面）。
+
+另外：扫了 App 的 4 个主要堆区（73MB + 58MB + 19MB + 12MB，共约 150MB）的**全部可打印字符串
+（含 UTF-16LE）**，逐个当 RC4 密钥试解，也没命中 —— 说明这个 key 在内存里不是以明文 ASCII 存在，
+或者当前进程还没走到取 key 的那一步。
