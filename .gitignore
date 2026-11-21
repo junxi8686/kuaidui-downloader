@@ -15,3 +15,7 @@ kd_capture.log
 # 系统
 .DS_Store
 Thumbs.db
+
+# 本地密钥（别提交）
+app/token.json
+token.json

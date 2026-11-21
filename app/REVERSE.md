@@ -732,3 +732,46 @@ python3 kd_native_emu.py --so /tmp/kdlib/lib/armeabi-v7a/libbaseutil.so \
 唯一没啃下来的是 `nativeSetToken` 内部的密钥生成 —— 它让 `signA` 过不了服务端，
 于是整条 App 通道暂时只能靠「真机桥」打通。`kd_full.py` 的网页端通道可以立刻用（3 页），
 桥打通后同一份脚本就是全书。
+
+---
+
+# §9 真机实证（2026-11-21 深夜补记）
+
+设备：Waydroid + 快对 5.14.0（vc=660），已 root（Magisk 给 `[SharedUID] Shell` 授权），
+mitmproxy 系统证书 + 全局代理，全链路抓包。
+
+## 9.1 已确认的（都有实证）
+
+| 项 | 结论 |
+|---|---|
+| SECRET | 从进程内存 `libbaseutil.so+0xa0d4` 读到的**指针**指向 10 字节：`33 51 4a 50 62 47 46 46 51 4a` = `"3QJPbGFFQJ"` |
+| md5(SECRET) | `16da319cadec25d7897de248f446502f` |
+| sign 公式 | **`md5("8&%d*[" + md5hex(SECRET) + "]@" + paramString)` 已用真机请求逐字节验证通过** |
+| paramString | `base64( sorted("k=v") 直接拼接 )`，**不含** `_t_` / `kakorrhaphiophobia` |
+| `_t_` | **秒级 epoch** |
+| `kakorrhaphiophobia` | **开机以来毫秒数（uptime）**，不是 epoch 毫秒 —— 之前一直算错，导致 `5112 client time too old` |
+| 公共参数 | 24 个：grade/gradeChangeTime/area/cuid/os/city/abis/channel/appBit/vc/token/adid/province/osVersion/pkgName/appId/vcname/sdk/operatorid/device/brand/nt + 端点参数 |
+| 请求头 | `zyb-cuid` / `zyb-did` / `zyb-adid` / `x-zyb-trace-id` / `cookie: cuid=`，UA 是 WebView UA |
+| 接口结果 | 用上述参数签 `/kdtools/book/downloadanswer` 得到过 `errNo:0 success` |
+
+## 9.2 唯一还缺的一环：响应里的 imageUrl 是 RC4 加密的
+
+```
+{"errNo":0,"data":{"imageUrl":"5xozNZXfDoSPg3oySay+sMelkK3jjTAbZf1SQ4cuijdW8HuHqEibxXsX+EvzIi4Pp9MzH+1iY2bwuV7B/dh+lPpfNq/N9r/BLjZiYZA="}}
+```
+
+- 解密入口：`BookDownloadAnswer.imageUrl` 带 `@Decrypt` → `JtmConfig.decryptString` → `NetConfig.decryptString` → RC4
+- RC4 的键：`com.kuaiduizuoye.scan.c.a.a.b()` 里 `f20813c = com.zuoyebang.baseutil.a.a(String.valueOf(BaseApplication.j()))`
+  → 即 `NativeHelper.nativeGetKey(versionCode)` —— 又是个 native 函数
+- 另有一处常量：`HWRequest.java:183` 用 `new RC4("vVkiD!@9vaXB0INQ")` 加密"随机 key"
+- 试过 135 种"md5/原文 + 盐 + vc"的组合去解 imageUrl，全部不中 → 说明 nativeGetKey 不是简单哈希
+
+## 9.3 因此当前状态
+
+- ✅ 签名链路 100% 通（公式、参数、时间戳都对）
+- ❌ 响应解密差一个 `nativeGetKey` 的算法
+- 可选收口方式：
+  1. 逆 `nativeGetKey`（跟 `nativeGetSign` 同一套 .so，工作量中等）
+  2. 直接从设备内存里读 RC4 key（Java String，需要定位）
+  3. 用 App 自己解密：抓 App 请求 `kd-book.cdnjtzy.com/scanimg/...` 的明文 URL（mitm 已能看到），
+     即「App 翻页 + 抓包」就能拿到原图直链 —— 不依赖上面任何一步
