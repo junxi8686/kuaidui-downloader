@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>快对答案下载器</title>
+<link rel="stylesheet" href="../extension/src/tokens.css">
+<link rel="stylesheet" href="../extension/src/popup.css">
+</head>
+<body class="kd-theme">
+
+<header>
+  <h1>快对答案下载器</h1>
+  <span class="ver" id="ver"></span>
+</header>
+
+<div class="search">
+  <input type="text" id="kw" placeholder="输入书名关键词，如：练习与测试">
+  <button id="go">搜索</button>
+</div>
+
+<div class="opts">
+  <span>图片质量</span>
+  <select id="width">
+    <option value="origin">原图（最大）</option>
+    <option value="2400">高清 2400</option>
+    <option value="1600">标准 1600</option>
+    <option value="1200">省流 1200</option>
+  </select>
+</div>
+
+<div class="toolbar">
+  <label class="chk"><input type="checkbox" id="all"> 全选</label>
+  <span id="count">0 本已选</span>
+  <span class="spacer"></span>
+  <button class="ghost" id="openPage">打开快对</button>
+</div>
+
+<div class="list" id="list">
+  <div class="empty">搜一本书，勾选后批量下载答案原图</div>
+</div>
+
+<div class="bar"><i id="bar"></i></div>
+<footer>
+  <div class="status" id="status">就绪</div>
+</footer>
+
+
+<script>
+/* 仅用于本地预览：假的 chrome.* */
+(function(){
+  var BOOKS = [
+    {bookId:'cee9bcf902dcb3ba990f58d7b7d82efe',title:'2026年湘教考苑中考总复习初中语文全册课标版',subject:'语文',grade:'初中',year:'2026年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_450075da1ffa0a43ec15f33db99a516b.jpg?imageView2/2/w/170'},
+    {bookId:'be7cd5907b53984fc83f47e9ba3097d6',title:'2026年湘教考苑中考总复习初中化学全册课标版',subject:'化学',grade:'初中',year:'2026年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_f66bc342cf62d2469f9afc117aac074e.jpg?imageView2/2/w/170'},
+    {bookId:'938438f14ee22cafa656a284acfdb234',title:'2025年湘教考苑中考总复习初中语文全册课标版',subject:'语文',grade:'初中',year:'2025年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_014f75892c9e04ca1bac1db3ed111a12.jpg?imageView2/2/w/170'},
+    {bookId:'5359ed3900a591fa95da5e7f5af4f78e',title:'2024年湘教考苑中考总复习初中语文全册通用版',subject:'语文',grade:'初中',year:'2024年',cover:'https://kd-book.cdnjtzy.com/scanimg/scan_338e8e9d887cd1f29990f4671b98d135.jpg?imageView2/2/w/170'}
+  ];
+  window.chrome = {
+    runtime: {
+      lastError: null,
+      getManifest: function(){ return {version:'1.0.0'}; },
+      onMessage: { addListener: function(){} },
+      sendMessage: function(msg, cb){
+        if (!cb) return;
+        if (msg.type === 'KD_SEARCH') return cb({ok:true, result:{books:BOOKS, total:BOOKS.length, hasMore:false}});
+        if (msg.type === 'KD_FETCH_BOOK') return cb({ok:false});
+        cb({ok:true});
+      }
+    },
+    storage: { local: { get: function(d,cb){ cb(Object.assign({imageWidth:'origin', kd_theme:'auto'}, d)); }, set: function(v,cb){cb&&cb();} } },
+    tabs: { create: function(){} }
+  };
+
+})();
+</script>
+
+<script src="../extension/src/lib.js"></script>
+<script src="../extension/src/popup.js"></script>
+<script>
+/* 预览用：直接触发一次搜索，保证截图时列表已渲染 */
+document.getElementById('kw').value = '练习与测试';
+document.getElementById('go').click();
+</script>
+</body>
+</html>

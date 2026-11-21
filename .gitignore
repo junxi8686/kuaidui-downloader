@@ -1,0 +1,17 @@
+# 构建产物
+*.zip
+!docs/*.zip
+
+# 测试与调试
+tests/out/
+__pycache__/
+*.pyc
+
+# 抓包 / 导出产物
+dumps/
+kd_capture.log
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db

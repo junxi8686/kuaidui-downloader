@@ -1,0 +1,176 @@
+/* 快对答案下载器 · 设计变量
+ *
+ * 浅色 = 极简白（大留白、细线、黑白加一点蓝）
+ * 深色 = 深色高级（近黑底、香槟金点缀、衬线标题）
+ *
+ * 用法：页面/面板根元素挂 class="kd-theme"。
+ *   - 默认跟随系统 prefers-color-scheme
+ *   - 手动覆盖：在该元素上写 data-theme="light" / "dark"
+ * 所有组件的颜色、字体、圆角、阴影都必须取这里的变量，不要再写死色值。
+ */
+
+/* ---------------- 浅色：极简白 ---------------- */
+
+:root,
+.kd-theme {
+  color-scheme: light;
+
+  /* 表面 */
+  --bg: #FAFAF9;
+  --surface: #FFFFFF;
+  --surface-2: #F4F4F2;
+  --surface-hover: rgba(24, 24, 27, 0.045);
+
+  /* 文字 */
+  --text: #18181B;
+  --muted: #6B6B73;
+  --line: #E4E4E7;
+  --line-strong: #D4D4D8;
+
+  /* 主色 / 强调 */
+  --primary: #18181B;
+  --on-primary: #FFFFFF;
+  --accent: #2563EB;
+  --link: #2563EB;
+  --danger: #B42318;
+
+  /* 形状 */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-pill: 999px;
+  --shadow: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --shadow-raised: 0 4px 16px rgba(24, 24, 27, 0.08);
+  --border-width: 1px;
+
+  /* 字体 */
+  --font-title: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-body: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --title-weight: 600;
+  --title-tracking: -0.02em;
+
+  /* 字号阶梯 */
+  --fs-xs: 12px;   /* 可读性下限 */
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+}
+
+/* ---------------- 深色：深色高级 ---------------- */
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  .kd-theme {
+    color-scheme: dark;
+
+    --bg: #0E0E10;
+    --surface: #18181B;
+    --surface-2: #1F1F23;
+    --surface-hover: rgba(242, 239, 233, 0.06);
+
+    --text: #F2EFE9;
+    --muted: #A19C93;
+    --line: #2C2C30;
+    --line-strong: #3A3A40;
+
+    --primary: #C9A86A;
+    --on-primary: #17140E;
+    --accent: #E8E2D6;
+    --link: #C9A86A;
+    --danger: #E0857A;
+
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    --shadow-raised: 0 18px 56px rgba(0, 0, 0, 0.55);
+
+    --font-title: "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
+    --font-body: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+    --title-weight: 500;
+    --title-tracking: 0.01em;
+  }
+}
+
+/* ---------------- 手动覆盖（优先于系统） ---------------- */
+
+:root[data-theme="light"],
+.kd-theme[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #FAFAF9;
+  --surface: #FFFFFF;
+  --surface-2: #F4F4F2;
+  --surface-hover: rgba(24, 24, 27, 0.045);
+
+  --text: #18181B;
+  --muted: #6B6B73;
+  --line: #E4E4E7;
+  --line-strong: #D4D4D8;
+
+  --primary: #18181B;
+  --on-primary: #FFFFFF;
+  --accent: #2563EB;
+  --link: #2563EB;
+  --danger: #B42318;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --shadow-raised: 0 4px 16px rgba(24, 24, 27, 0.08);
+
+  --font-title: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-body: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --title-weight: 600;
+  --title-tracking: -0.02em;
+}
+
+:root[data-theme="dark"],
+.kd-theme[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0E0E10;
+  --surface: #18181B;
+  --surface-2: #1F1F23;
+  --surface-hover: rgba(242, 239, 233, 0.06);
+
+  --text: #F2EFE9;
+  --muted: #A19C93;
+  --line: #2C2C30;
+  --line-strong: #3A3A40;
+
+  --primary: #C9A86A;
+  --on-primary: #17140E;
+  --accent: #E8E2D6;
+  --link: #C9A86A;
+  --danger: #E0857A;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --shadow-raised: 0 18px 56px rgba(0, 0, 0, 0.55);
+
+  --font-title: "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
+  --font-body: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --title-weight: 500;
+  --title-tracking: 0.01em;
+}
+
+/* ---------------- 基础 ---------------- */
+
+.kd-theme {
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  transition: background-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              color 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>快对答案下载器</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body class="kd-theme">
+
+<header>
+  <h1>快对答案下载器</h1>
+  <span class="ver" id="ver"></span>
+</header>
+
+<div class="search">
+  <input type="text" id="kw" placeholder="输入书名关键词，如：练习与测试">
+  <button id="go">搜索</button>
+</div>
+
+<div class="opts">
+  <span>图片质量</span>
+  <select id="width">
+    <option value="origin">原图（最大）</option>
+    <option value="2400">高清 2400</option>
+    <option value="1600">标准 1600</option>
+    <option value="1200">省流 1200</option>
+  </select>
+</div>
+
+<div class="toolbar">
+  <label class="chk"><input type="checkbox" id="all"> 全选</label>
+  <span id="count">0 本已选</span>
+  <span class="spacer"></span>
+  <button class="ghost" id="openPage">打开快对</button>
+</div>
+
+<div class="list" id="list">
+  <div class="empty">搜一本书，勾选后批量下载答案原图</div>
+</div>
+
+<div class="bar"><i id="bar"></i></div>
+<footer>
+  <div class="status" id="status">就绪</div>
+</footer>
+
+<script src="lib.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

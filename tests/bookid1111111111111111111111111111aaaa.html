@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>SPA 场景 · 快对答案下载器</title>
+<link rel="stylesheet" href="../extension/src/tokens.css">
+<style>
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: var(--fs-md);
+    line-height: 1.65;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 56px 24px 120px;
+  }
+  h1 {
+    margin: 0 0 var(--space-2);
+    font-family: var(--font-title);
+    font-size: 26px;
+    font-weight: var(--title-weight);
+    letter-spacing: var(--title-tracking);
+    line-height: 1.35;
+  }
+  .meta {
+    margin-bottom: var(--space-5);
+    color: var(--muted);
+    font-size: var(--fs-sm);
+  }
+  .card {
+    padding: var(--space-5);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  .card h2 {
+    margin: 0 0 var(--space-4);
+    font-family: var(--font-title);
+    font-size: var(--fs-lg);
+    font-weight: var(--title-weight);
+    letter-spacing: var(--title-tracking);
+  }
+  .pages {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .pages img {
+    width: 128px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+  }
+  .note {
+    margin-top: var(--space-5);
+    color: var(--muted);
+    font-size: var(--fs-sm);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>2026年湘教考苑中考总复习初中语文全册课标版</h1>
+  <div class="meta">语文 · 初中 · 全册 · 课标版 · 共 18 页答案</div>
+
+  <div class="card">
+    <h2>参考答案（预览）· SPA 场景</h2>
+    <div class="pages">
+      <img src="https://kd-book.cdnjtzy.com/scanimg/scan_450075da1ffa0a43ec15f33db99a516b.jpg?imageView2/2/w/170" alt="封面">
+      <img src="https://kd-book.cdnjtzy.com/scanimg/scan_338e8e9d887cd1f29990f4671b98d135.jpg?imageView2/2/w/170" alt="答案第 1 页">
+    </div>
+    <div class="note">这是「SPA 跳转后」的模拟页：页面里没有 __NUXT__，只有封面和第 1 页 —— 用来验证插件会向后台再取一次服务端数据。</div>
+  </div>
+</div>
+
+<!-- SPA 跳转后的页面没有 __NUXT__，这里故意不留 -->
+
+<!-- 本地跑 content script 需要的 chrome.* 垫片 -->
+<script>
+  window.chrome = {
+    runtime: {
+      lastError: null,
+      getURL: function (p) { return '../extension/' + p; },
+      onMessage: { addListener: function () {} },
+      sendMessage: function (msg, cb) {
+        if (!cb) return;
+        if (msg.type === 'KD_FETCH_BOOK') {
+          // 模拟后台抓 https://m.kuaiduizuoye.com/bookid… 的结果（真实数据）
+          cb({ ok: true, detail: {
+            bookId: 'cee9bcf902dcb3ba990f58d7b7d82efe',
+            name: '2026年湘教考苑中考总复习初中语文全册课标版',
+            subject: '语文', grade: '初中', term: '全册', version: '课标版', year: '2026年',
+            cover: 'https://kd-book.cdnjtzy.com/scanimg/scan_450075da1ffa0a43ec15f33db99a516b.jpg',
+            answerCount: 18,
+            pages: [],
+            images: [
+              'https://kd-book.cdnjtzy.com/scanimg/scan_338e8e9d887cd1f29990f4671b98d135.jpg',
+              'https://kd-book.cdnjtzy.com/scanimg/scan_0a24b0c64d61a2e29d5ea5ff7887a96f.jpg',
+              'https://kd-book.cdnjtzy.com/scanimg/scan_55686dcc58e992cd431d90345a2e81a0.jpg'
+            ],
+            sourceUrl: location.href
+          } });
+        } else if (msg.type === 'KD_RUN') {
+          cb({ ok: false, error: '这是本地预览页，下载请到真的快对页面里点' });
+        } else {
+          cb({ ok: true });
+        }
+      }
+    },
+    storage: {
+      local: {
+        get: function (d, cb) { cb(d); },
+        set: function (v, cb) { cb && cb(); }
+      }
+    }
+  };
+</script>
+<script src="../extension/src/lib.js"></script>
+<script src="../extension/src/content.js"></script>
+</body>
+</html>
